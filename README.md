@@ -1,0 +1,97 @@
+# Hệ thống đánh giá KPI – MTTQ Việt Nam
+
+Trang web tĩnh (GitHub Pages) + máy chủ Google Apps Script (dự án `KPIMTTQQTRI`) + dữ liệu trong bảng tính Google `KPIMTTQQTRI`.
+
+## Cấu trúc
+
+| Tệp | Vai trò |
+|---|---|
+| `index.html`, `assets/` | Giao diện, đưa lên GitHub Pages |
+| `assets/config.js` | Nơi dán đường dẫn máy chủ (`API_URL`) |
+| `assets/core.js` | Lõi nghiệp vụ: phân quyền, cây phụ trách, tính điểm, KPI tổng hợp |
+| `apps-script/Code.gs` | Máy chủ Apps Script: đọc/ghi Google Sheet, tải tệp lên Drive |
+| `apps-script/Core.gs` | **Bản sao y nguyên** của `assets/core.js` |
+| `apps-script/Seed.gs` | Tài khoản quản trị khởi đầu (mật khẩu dạng băm). **Không đưa lên GitHub** |
+| `apps-script/appsscript.json` | Tệp cấu hình dự án Apps Script |
+
+## Danh mục
+
+- **Đơn vị** (trang tính `DonVi`): Mã đơn vị, Tên đơn vị, Mã đơn vị cha, Thứ tự. Tổ chức dạng cây.
+- **Người dùng** (trang tính `NguoiDung`): CCCD (dùng làm tên đăng nhập), Mã đơn vị, Họ tên, Chức vụ, Số điện thoại, Email, cùng các cột phân quyền:
+  - **Cấp**: Thủ trưởng cơ quan, Trưởng đơn vị, Phó đơn vị, Cá nhân.
+  - **Người phụ trách đánh giá**: CCCD của người đánh giá phiếu của người này. Chỉ chọn được người từ cấp phó trở lên.
+  - **Tự kê công việc**: có/không. Mặc định Phó đơn vị và Cá nhân có; Trưởng đơn vị và Thủ trưởng không.
+  - **Quản trị**: người được khai danh mục và phân quyền.
+
+## Nguyên tắc đánh giá KPI
+
+1. Cá nhân tự kê công việc và tự chấm 5 tiêu chí A–E cho từng việc, rồi nộp phiếu.
+2. Người phụ trách (được quản trị viên khai, từ cấp phó trở lên) chấm lại A–E và **công nhận kết quả**, hoặc **yêu cầu sửa** kèm lý do.
+3. KPI tổng hợp của một người = điểm phiếu của chính người đó đã được công nhận + KPI tổng hợp của những người do người đó phụ trách. Từ đó:
+   - **Phó đơn vị** = công việc tự làm + các cá nhân mình phụ trách.
+   - **Trưởng đơn vị** = tổng KPI của các cấp phó (và những người mình trực tiếp phụ trách).
+   - **Thủ trưởng cơ quan** = tổng KPI của các đơn vị.
+4. **Quy đổi bình quân** = KPI tổng hợp ÷ số người tự kê công việc trong phạm vi. Đây là cách quy đổi do người dựng hệ thống chọn; nếu cơ quan quy đổi theo cách khác thì sửa ở `assets/app.js` (các chỗ ghi "Quy đổi bình quân").
+
+Quyền xem: mỗi người thấy phiếu của mình; người phụ trách thấy mọi người nằm dưới mình trong cây phụ trách (mọi cấp); quản trị viên thấy tất cả. Chỉ người phụ trách trực tiếp mới đánh giá được phiếu. Quản trị viên có thể mở lại một phiếu đã công nhận để đánh giá lại.
+
+## Cách chấm điểm một công việc (theo tệp mẫu `Văn phòng.xlsx`)
+
+- `S = A×35% + B×30% + C×15% + D×15% + E×5%`, làm tròn 2 chữ số.
+- Mức N: S dưới 1,8 là N1; dưới 2,6 là N2; dưới 3,4 là N3; dưới 4,2 là N4; đến 5 là N5.
+- Điểm của N: N1 = 0,25; N2 = 0,5; N3 = 1; N4 = 2; N5 = 4.
+- Điểm phiếu = tổng (số lượng sản phẩm × điểm của N).
+- Các mức A–E, bảng N và danh mục sản phẩm nằm trong `KPI_MODEL` ở `assets/core.js`.
+
+## Triển khai
+
+### Máy chủ Apps Script (dự án KPIMTTQQTRI)
+
+1. Mở dự án `KPIMTTQQTRI` trên <https://script.google.com>.
+2. Tạo 3 tệp tập lệnh `Code`, `Core`, `Seed` và dán nội dung các tệp cùng tên trong `apps-script/`.
+3. **Cài đặt dự án** › bật "Hiển thị tệp kê khai appsscript.json", dán nội dung `apps-script/appsscript.json`.
+4. Chọn hàm `setup`, bấm **Chạy**, cấp quyền khi được hỏi. Hàm này tìm bảng tính tên `KPIMTTQQTRI` trong Drive (không có thì tạo), tạo các trang tính và tài khoản quản trị khởi đầu.
+5. **Triển khai › Tùy chọn triển khai mới › Ứng dụng web**: Thực thi dưới dạng *Tôi*, Người có quyền truy cập *Bất kỳ ai*. Sao chép đường dẫn kết thúc bằng `/exec`.
+6. Sau khi `setup` chạy xong có thể xoá tệp `Seed` khỏi dự án.
+
+Mỗi lần sửa mã Apps Script phải **Quản lý triển khai › Chỉnh sửa › Phiên bản mới** thì thay đổi mới có hiệu lực.
+
+### Giao diện trên GitHub Pages
+
+1. Dán đường dẫn `/exec` vào `API_URL` trong `assets/config.js`, đưa thay đổi lên kho GitHub.
+2. Trong kho: **Settings › Pages › Deploy from a branch › main / (root)**.
+
+### Thiết lập ban đầu
+
+Quản trị viên đăng nhập bằng CCCD, vào **Quản trị**:
+
+1. **Đơn vị**: khai cây đơn vị (thêm từng đơn vị hoặc dán danh sách từ Excel).
+2. **Người dùng**: thêm từng người hoặc dán danh sách từ Excel. Mỗi tài khoản mới có mật khẩu tạm, hiện một lần; người dùng buộc đổi khi đăng nhập lần đầu.
+3. Với từng người: chọn **Cấp** và **Người phụ trách đánh giá**. Tab **Cây phụ trách** cho thấy ai đánh giá ai và ai chưa được khai.
+4. **Kỳ đánh giá**: tạo kỳ tháng/quý/năm, đặt hạn nộp, khoá kỳ khi xong.
+
+## Lưu ý vận hành
+
+- **Không đưa lên GitHub** tệp Excel chứa dữ liệu thật và tệp `apps-script/Seed.gs`. `.gitignore` đã chặn cả hai.
+- Mật khẩu chỉ lưu dạng băm SHA-256 có muối. Quên mật khẩu quản trị: chạy hàm `resetAdminPassword` trong Apps Script.
+- Bảng tính chứa CCCD, số điện thoại, email: chỉ chia sẻ bảng tính cho người có trách nhiệm. Số điện thoại và email chỉ hiện với chính người đó và quản trị viên.
+- Không đổi tên trang tính và dòng tiêu đề trong bảng tính. Sửa tay dữ liệu thì giữ đúng mã đơn vị và CCCD.
+- Danh sách công việc của mỗi phiếu lưu dạng JSON trong các cột "Công việc (1)…(4)" của trang tính `PhieuDanhGia`; muốn xem dạng bảng thì dùng nút Xuất Excel trên phiếu.
+- Tệp minh chứng tải lên nằm trong thư mục Drive `KPI_MinhChung`, chia sẻ dạng "ai có đường liên kết đều xem được" để người phụ trách mở được.
+- Quy mô phù hợp: vài chục đến vài trăm người dùng. Apps Script xử lý lần lượt từng yêu cầu (mỗi thao tác 1–3 giây).
+
+## Chạy thử trên máy
+
+```bash
+python3 -m http.server 8765
+```
+
+Mở `http://localhost:8765`. Khi `API_URL` trống và đang ở `localhost`, trang dùng dữ liệu mẫu lưu trong trình duyệt (tài khoản thử hiện ngay dưới ô đăng nhập). Trên trang thật không có chế độ này.
+
+## Khi sửa lõi nghiệp vụ
+
+```bash
+cp assets/core.js apps-script/Core.gs
+```
+
+rồi dán lại nội dung `Core.gs` vào dự án Apps Script và triển khai phiên bản mới.

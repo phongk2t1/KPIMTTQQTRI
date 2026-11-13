@@ -1,6 +1,6 @@
 /* ============================================================
  * KPI MTTQ – MÁY CHỦ GOOGLE APPS SCRIPT (dự án KPIMTTQQTRI)
- * Dữ liệu lưu trong bảng tính Google "KPIMTTQQTRI".
+ * Dữ liệu lưu trong bảng tính Google "KPIMTTQQTRI" (xem KPI_SHEET_ID).
  * Dự án gồm 3 tệp: Code.gs (tệp này), Core.gs (bản sao của assets/core.js), Seed.gs (tài khoản khởi đầu).
  *
  * Cách dùng:
@@ -9,24 +9,12 @@
  *   3. Dán đường dẫn /exec vào assets/config.js của trang GitHub.
  * ============================================================ */
 
-var KPI_DB_NAME = 'KPIMTTQQTRI';         // tên bảng tính chứa dữ liệu
-var KPI_UPLOAD_FOLDER = 'KPI_MinhChung'; // thư mục Drive chứa tệp minh chứng
+// Mã của bảng tính "KPIMTTQQTRI" chứa dữ liệu (phần giữa /d/ và /edit trong địa chỉ bảng tính).
+// Máy chủ chỉ xin quyền với Google Trang tính, không đụng tới các tệp khác trên Drive.
+var KPI_SHEET_ID = '1lfjNlIKGNmCvWaSO1KR3_d64DR0rwzmdknFbSJ3Z1pI';
 
 function getSpreadsheet_() {
-  var props = PropertiesService.getScriptProperties();
-  var id = props.getProperty('KPI_SHEET_ID');
-  if (id) return SpreadsheetApp.openById(id);
-  var ss = SpreadsheetApp.getActiveSpreadsheet(); // khi dự án gắn liền với bảng tính
-  if (!ss) {
-    var files = DriveApp.getFilesByName(KPI_DB_NAME);
-    while (files.hasNext() && !ss) {
-      var f = files.next();
-      if (f.getMimeType() === MimeType.GOOGLE_SHEETS && !f.isTrashed()) ss = SpreadsheetApp.openById(f.getId());
-    }
-  }
-  if (!ss) ss = SpreadsheetApp.create(KPI_DB_NAME);
-  props.setProperty('KPI_SHEET_ID', ss.getId());
-  return ss;
+  return SpreadsheetApp.openById(KPI_SHEET_ID);
 }
 
 /** Kho dữ liệu trên Google Sheet: mỗi bảng là một trang tính, dòng 1 là tiêu đề cột tiếng Việt (KPI_LABELS). */
@@ -93,14 +81,6 @@ function makeEnv_() {
       var s = props.getProperty('KPI_SECRET');
       if (!s) { s = Utilities.getUuid() + Utilities.getUuid(); props.setProperty('KPI_SECRET', s); }
       return s;
-    },
-    uploadFile: function (name, mime, base64) {
-      var it = DriveApp.getFoldersByName(KPI_UPLOAD_FOLDER);
-      var folder = it.hasNext() ? it.next() : DriveApp.createFolder(KPI_UPLOAD_FOLDER);
-      var file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(base64), mime || 'application/octet-stream', name));
-      // Người duyệt cần mở được tệp: chia sẻ dạng "ai có đường liên kết đều xem được".
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      return { url: file.getUrl(), label: name };
     }
   };
 }

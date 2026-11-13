@@ -9,7 +9,7 @@ Trang web tĩnh (GitHub Pages) + máy chủ Google Apps Script (dự án `KPIMTT
 | `index.html`, `assets/` | Giao diện, đưa lên GitHub Pages |
 | `assets/config.js` | Nơi dán đường dẫn máy chủ (`API_URL`) |
 | `assets/core.js` | Lõi nghiệp vụ: phân quyền, cây phụ trách, tính điểm, KPI tổng hợp |
-| `apps-script/Code.gs` | Máy chủ Apps Script: đọc/ghi Google Sheet, tải tệp lên Drive |
+| `apps-script/Code.gs` | Máy chủ Apps Script: đọc/ghi Google Sheet |
 | `apps-script/Core.gs` | **Bản sao y nguyên** của `assets/core.js` |
 | `apps-script/Seed.gs` | Tài khoản quản trị khởi đầu (mật khẩu dạng băm). **Không đưa lên GitHub** |
 | `apps-script/appsscript.json` | Tệp cấu hình dự án Apps Script |
@@ -50,7 +50,7 @@ Quyền xem: mỗi người thấy phiếu của mình; người phụ trách th
 1. Mở dự án `KPIMTTQQTRI` trên <https://script.google.com>.
 2. Tạo 3 tệp tập lệnh `Code`, `Core`, `Seed` và dán nội dung các tệp cùng tên trong `apps-script/`.
 3. **Cài đặt dự án** › bật "Hiển thị tệp kê khai appsscript.json", dán nội dung `apps-script/appsscript.json`.
-4. Chọn hàm `setup`, bấm **Chạy**, cấp quyền khi được hỏi. Hàm này tìm bảng tính tên `KPIMTTQQTRI` trong Drive (không có thì tạo), tạo các trang tính và tài khoản quản trị khởi đầu.
+4. Chọn hàm `setup`, bấm **Chạy**, cấp quyền khi được hỏi. Hàm này mở bảng tính có mã ghi ở `KPI_SHEET_ID` trong `Code.gs`, tạo các trang tính và tài khoản quản trị khởi đầu. Máy chủ chỉ xin quyền với Google Trang tính.
 5. **Triển khai › Tùy chọn triển khai mới › Ứng dụng web**: Thực thi dưới dạng *Tôi*, Người có quyền truy cập *Bất kỳ ai*. Sao chép đường dẫn kết thúc bằng `/exec`.
 6. Sau khi `setup` chạy xong có thể xoá tệp `Seed` khỏi dự án.
 
@@ -77,7 +77,7 @@ Quản trị viên đăng nhập bằng CCCD, vào **Quản trị**:
 - Bảng tính chứa CCCD, số điện thoại, email: chỉ chia sẻ bảng tính cho người có trách nhiệm. Số điện thoại và email chỉ hiện với chính người đó và quản trị viên.
 - Không đổi tên trang tính và dòng tiêu đề trong bảng tính. Sửa tay dữ liệu thì giữ đúng mã đơn vị và CCCD.
 - Danh sách công việc của mỗi phiếu lưu dạng JSON trong các cột "Công việc (1)…(4)" của trang tính `PhieuDanhGia`; muốn xem dạng bảng thì dùng nút Xuất Excel trên phiếu.
-- Tệp minh chứng tải lên nằm trong thư mục Drive `KPI_MinhChung`, chia sẻ dạng "ai có đường liên kết đều xem được" để người phụ trách mở được.
+- Minh chứng: cán bộ dán đường dẫn (ví dụ liên kết tệp trên Drive của mình). Chức năng tải tệp trực tiếp đã tắt để máy chủ không cần quyền trên toàn bộ Google Drive.
 - Quy mô phù hợp: vài chục đến vài trăm người dùng. Apps Script xử lý lần lượt từng yêu cầu (mỗi thao tác 1–3 giây).
 
 ## Chạy thử trên máy

@@ -147,3 +147,15 @@ function resetAdminPassword() {
   store.update('Users', admin.id, { salt: salt, passHash: env.hash(salt + '|' + pass), mustChange: 1, active: 1 });
   Logger.log('Tài khoản: ' + admin.id + ' – mật khẩu tạm: ' + pass);
 }
+
+/** Chạy MỘT LẦN (nếu có tệp DuLieuMau.gs): nạp phiếu mẫu vào bảng tính. Chạy lại sẽ ghi đè các phiếu đó. */
+function importSample() {
+  if (typeof KPI_SAMPLE_EVALS === 'undefined') throw new Error('Chưa có tệp DuLieuMau.gs trong dự án.');
+  var lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    var core = KPI_createCore(makeSheetStore_(getSpreadsheet_()), makeEnv_());
+    core.importEvals(KPI_SAMPLE_EVALS.userId, KPI_SAMPLE_EVALS.months).forEach(function (line) { Logger.log(line); });
+    Logger.log('ĐÃ NẠP XONG.');
+  } finally { lock.releaseLock(); }
+}

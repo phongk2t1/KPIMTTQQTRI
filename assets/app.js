@@ -262,7 +262,8 @@
     rs.forEach(function (r) {
       if (!r.user.selfEval) return;
       g.n++; g.tasks += r.taskCount || 0;
-      if (r.status === 'da_chot') { g.done++; g.sum += r.finalTotal || 0; }
+      if (r.mgrTotal != null) g.sum += r.mgrTotal; // việc đã chấm được cộng ngay
+      if (r.status === 'da_chot') g.done++;
       else if (r.status === 'cho_duyet') g.wait++;
       else if (r.status === 'nhap' || r.status === 'yeu_cau_sua') g.draft++;
       else g.none++;
@@ -306,7 +307,7 @@
     var sub = lead ? g.done + '/' + g.n + ' người đã được đánh giá' + (g.wait ? ' · ' + g.wait + ' chờ chấm' : '') : (r.user.selfEval ? (r.taskCount || 0) + ' công việc' + (r.selfTotal != null ? ' · tự chấm ' + fmt(r.selfTotal) : '') : 'Không tự kê công việc');
     return '<button class="person" data-act="' + (lead ? 'dashUser' : 'open') + '" data-u="' + h(r.user.id) + '"><span class="nm"><b>' + h(r.user.fullName) + '</b><span>' + h(r.user.title || LEVEL[r.user.level]) + ' · ' + h(unitName(r.user.unitId)) + '</span></span>' +
       '<span class="pg">' + stackBar(g) + '<small>' + sub + '</small></span>' +
-      '<span class="rt">' + (lead ? '<b>' + fmt(r.kpi) + '</b> <span class="muted small">KPI</span>' : badge(r.status) + (r.finalTotal != null ? ' <b>' + fmt(r.finalTotal) + '</b>' : '')) + '</span></button>';
+      '<span class="rt">' + (lead ? '<b>' + fmt(r.kpi) + '</b> <span class="muted small">KPI</span>' : badge(r.status) + (r.mgrTotal != null ? ' <b>' + fmt(r.mgrTotal) + '</b>' : '')) + '</span></button>';
   }
   function sortPeople(a, b) { return KPI_LEVELS[a.user.level].rank - KPI_LEVELS[b.user.level].rank || a.user.fullName.localeCompare(b.user.fullName, 'vi'); }
   function focusHtml(rows) {
@@ -356,7 +357,7 @@
         '<div class="stat"><div class="l">Trạng thái</div><div class="v" style="font-size:18px;margin-top:6px">' + badge(mine.status) + '</div></div>' +
         '<div class="stat"><div class="v">' + (mine.taskCount || 0) + '</div><div class="l">Công việc đã kê</div></div>' +
         '<div class="stat"><div class="v">' + fmt(mine.selfTotal) + '</div><div class="l">Điểm tự chấm</div></div>' +
-        '<div class="stat s-done"><div class="v">' + fmt(mine.finalTotal) + '</div><div class="l">Điểm được công nhận</div></div></div>' +
+        '<div class="stat s-done"><div class="v">' + fmt(mine.mgrTotal) + '</div><div class="l">Điểm đã được chấm</div></div></div>' +
         '<div class="actions"><a class="btn primary" href="#/tudanhgia">Mở phiếu tự đánh giá</a><span class="muted">' + h(dl) + '</span>' +
         (!me.managerId ? '<span class="badge b-amber">Chưa được khai người phụ trách đánh giá</span>' : '') + '</div></div>';
     }
@@ -407,10 +408,10 @@
   /* ---------- Đánh giá cấp dưới ---------- */
   function rowsTable(rows, withAction) {
     if (!rows.length) return '<div class="muted">Không có ai.</div>';
-    return '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Họ tên</th><th>Đơn vị</th><th>Cấp</th><th class="num">Số việc</th><th class="num">Tự chấm</th><th class="num">Được công nhận</th><th class="num">KPI tổng hợp</th><th>Trạng thái</th>' + (withAction ? '<th></th>' : '') + '</tr></thead><tbody>' +
+    return '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Họ tên</th><th>Đơn vị</th><th>Cấp</th><th class="num">Số việc</th><th class="num">Tự chấm</th><th class="num">Đã được chấm</th><th class="num">KPI tổng hợp</th><th>Trạng thái</th>' + (withAction ? '<th></th>' : '') + '</tr></thead><tbody>' +
       rows.map(function (r) {
         return '<tr class="click" data-act="open" data-u="' + h(r.user.id) + '"><td><b>' + h(r.user.fullName) + '</b><div class="muted small">' + h(r.user.title) + '</div></td><td>' + h(unitName(r.user.unitId)) + '</td><td>' + h(LEVEL[r.user.level]) + '</td>' +
-          '<td class="num">' + (r.taskCount || '–') + '</td><td class="num">' + fmt(r.selfTotal) + '</td><td class="num">' + fmt(r.finalTotal) + '</td><td class="num"><b>' + fmt(r.kpi) + '</b></td><td>' + badge(r.status) + '</td>' +
+          '<td class="num">' + (r.taskCount || '–') + '</td><td class="num">' + fmt(r.selfTotal) + '</td><td class="num">' + fmt(r.mgrTotal) + '</td><td class="num"><b>' + fmt(r.kpi) + '</b></td><td>' + badge(r.status) + '</td>' +
           (withAction ? '<td class="right"><span class="btn sm primary">Đánh giá</span></td>' : '') + '</tr>';
       }).join('') + '</tbody></table></div>';
   }
@@ -445,7 +446,7 @@
   }
   function setEval(d) {
     var p = d.perms;
-    E = { d: d, tasks: JSON.parse(JSON.stringify(d.ev.tasks || [])), months: periodMonths(d.period), canMgr: p.canScore, sel: {} };
+    E = { d: d, tasks: JSON.parse(JSON.stringify(d.ev.tasks || [])), months: periodMonths(d.period), canMgr: p.canScore, sel: {}, editing: {}, orig: {} };
     E.tasks.forEach(function (t) {
       if (!t.s) t.s = [0, 0, 0, 0, 0];
       if (E.canMgr && !KPI_calc(t.m)) t.m = (KPI_calc(t.pm) ? t.pm : t.s).slice(); // điền sẵn: việc lặp lại lấy kết quả chấm kỳ trước, việc khác theo mức cán bộ tự chọn; người đánh giá đổi được
@@ -478,8 +479,9 @@
   }
   function blankMgrTask() { return { id: newId(), isNew: true, name: '', product: 'Công văn', qty: 1, month: E.months[E.months.length - 1], s: [0, 0, 0, 0, 0], m: [0, 0, 0, 0, 0], link: '', note: '' }; }
   function taskRow(t, ti) {
-    var canAll = E.d.perms.canEdit, mgr = E.canMgr;
-    var edit = (canAll && !t.locked) || (mgr && t.isNew); // cán bộ sửa việc chưa bị khoá; người phụ trách sửa việc mình vừa thêm
+    var canAll = E.d.perms.canEdit, mgr = E.canMgr, selfScore = E.d.perms.selfScore, fixing = !!E.editing[t.id];
+    var edit = (canAll && (!t.locked || (selfScore && fixing))) || (mgr && t.isNew); // cán bộ sửa việc chưa bị khoá; người tự chấm bấm Sửa để sửa việc đã chấm; người phụ trách sửa việc mình vừa thêm
+    var mEdit = mgr && (!t.locked || fixing || t.isNew);                               // người phụ trách: việc đã chấm phải bấm Sửa mới đổi được
     var months = E.months.indexOf(t.month) < 0 && t.month ? E.months.concat([t.month]) : E.months;
     var name = edit ? '<textarea rows="3" data-fld="name" data-t="' + ti + '" placeholder="' + (t.isNew ? 'Tên công việc thêm cho cấp dưới' : 'Tên công việc (ghi thật rõ việc đã làm)') + '">' + h(t.name) + '</textarea>' +
       (t.isNew ? '' : '<div class="ev-add no-print"><input type="url" data-fld="link" data-t="' + ti + '" value="' + h(t.link || '') + '" placeholder="Đường dẫn minh chứng (không bắt buộc)">' +
@@ -499,14 +501,17 @@
     for (var i = 0; i < 5; i++) cells += levelCell(t, ti, 's', i, edit && !t.isNew);
     cells += calcCells(t, 's');
     if (E.showMgr) {
-      for (var k = 0; k < 5; k++) cells += levelCell(t, ti, 'm', k, mgr);
+      for (var k = 0; k < 5; k++) cells += levelCell(t, ti, 'm', k, mEdit);
       cells += calcCells(t, 'm');
     }
     if (mgr) {
-      cells += '<td class="c-note"><textarea rows="2" data-fld="note" data-t="' + ti + '" placeholder="Nhận xét cho việc này (không bắt buộc)" aria-label="Nhận xét cho công việc ' + (ti + 1) + '">' + h(t.note || '') + '</textarea></td>' +
-        '<td class="no-print center nowrap"><button type="button" class="btn sm ok" data-act="scoreOne" data-t="' + ti + '">Chấm điểm</button>' +
-        (t.isNew ? ' <button type="button" class="btn sm danger" title="Bỏ việc vừa thêm" data-act="taskDel" data-t="' + ti + '">×</button>' : '') + '</td>';
-    } else if (canAll) cells += '<td class="no-print center">' + (edit ? '<button type="button" class="btn sm danger" title="Xoá dòng này" data-act="taskDel" data-t="' + ti + '">×</button>' : '') + '</td>';
+      cells += '<td class="c-note">' + (mEdit ? '<textarea rows="2" data-fld="note" data-t="' + ti + '" placeholder="Nhận xét cho việc này (không bắt buộc)" aria-label="Nhận xét cho công việc ' + (ti + 1) + '">' + h(t.note || '') + '</textarea>' : (t.note ? h(t.note) : '<span class="muted">–</span>')) + '</td>' +
+        '<td class="no-print center nowrap">' + (mEdit ? '<button type="button" class="btn sm ok" data-act="scoreOne" data-t="' + ti + '">Chấm điểm</button>' +
+          (fixing && t.locked ? ' <button type="button" class="btn sm" data-act="editCancel" data-t="' + ti + '">Huỷ</button>' : '') +
+          (t.isNew ? ' <button type="button" class="btn sm danger" title="Bỏ việc vừa thêm" data-act="taskDel" data-t="' + ti + '">×</button>' : '')
+          : '<button type="button" class="btn sm" data-act="editRow" data-t="' + ti + '" title="Sửa lại kết quả đã chấm của việc này">Sửa</button>') + '</td>';
+    } else if (canAll) cells += '<td class="no-print center nowrap">' + (selfScore && t.locked ? (fixing ? '<button type="button" class="btn sm" data-act="editCancel" data-t="' + ti + '">Huỷ</button>' : '<button type="button" class="btn sm" data-act="editRow" data-t="' + ti + '" title="Sửa lại việc đã chấm">Sửa</button>')
+      : edit ? '<button type="button" class="btn sm danger" title="Xoá dòng này" data-act="taskDel" data-t="' + ti + '">×</button>' : '') + '</td>';
     return '<tr data-row="' + ti + '"' + (t.locked ? ' class="locked"' : '') + '>' + cells + '</tr>';
   }
   function tableHtml() {
@@ -538,16 +543,16 @@
     var sub = Math.round((k.total - k.own) * 100) / 100;
     return '<div class="card"><h2>Kết quả KPI của ' + h(o.fullName) + ' · ' + h(d.period.name) + '</h2>' +
       '<div class="stats" style="margin-bottom:14px">' +
-      '<div class="stat"><div class="v">' + (o.selfEval ? fmt(k.own) : '–') + '</div><div class="l">Việc tự thực hiện đã được công nhận</div>' + (o.selfEval && d.ev.status !== 'da_chot' ? '<div class="x">phiếu chưa chấm xong nên chưa tính</div>' : '') + '</div>' +
+      '<div class="stat"><div class="v">' + (o.selfEval ? fmt(k.own) : '–') + '</div><div class="l">Việc tự thực hiện đã được chấm</div>' + (o.selfEval ? '<div class="x">' + E.tasks.filter(function (t) { return t.locked; }).length + '/' + E.tasks.filter(function (t) { return !t.isNew; }).length + ' việc đã chấm</div>' : '') + '</div>' +
       '<div class="stat"><div class="v">' + fmt(sub) + '</div><div class="l">Kết quả của ' + team.length + ' người do đồng chí phụ trách</div></div>' +
       '<div class="stat hl"><div class="v">' + fmt(k.total) + '</div><div class="l">Tổng KPI</div><div class="x">' + k.done + '/' + k.people + ' người trong phạm vi đã được đánh giá</div></div></div>' +
       '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Người do đồng chí phụ trách</th><th>Cấp</th><th class="num">Số việc</th><th class="num">Điểm việc tự thực hiện</th><th class="num">Kết quả tính cho ' + h(o.fullName) + '</th><th>Trạng thái phiếu</th></tr></thead><tbody>' +
       team.map(function (r) {
         return '<tr class="click" data-act="open" data-u="' + h(r.user.id) + '"><td><b>' + h(r.user.fullName) + '</b><div class="muted small">' + h(r.user.title) + ' · ' + h(unitName(r.user.unitId)) + '</div></td><td>' + h(LEVEL[r.user.level]) + '</td>' +
-          '<td class="num">' + (r.taskCount || '–') + '</td><td class="num">' + fmt(r.finalTotal) + '</td><td class="num"><b>' + fmt(r.kpi) + '</b>' + (r.reports ? '<div class="muted small">gồm cả ' + r.reports + ' người cấp dưới</div>' : '') + '</td><td>' + badge(r.status) + '</td></tr>';
+          '<td class="num">' + (r.taskCount || '–') + '</td><td class="num">' + fmt(r.mgrTotal) + '</td><td class="num"><b>' + fmt(r.kpi) + '</b>' + (r.reports ? '<div class="muted small">gồm cả ' + r.reports + ' người cấp dưới</div>' : '') + '</td><td>' + badge(r.status) + '</td></tr>';
       }).join('') +
       '</tbody><tfoot><tr><td colspan="4" class="right">' + (o.selfEval ? 'Việc tự thực hiện ' + fmt(k.own) + ' + kết quả cấp dưới ' + fmt(sub) + ' = ' : 'Tổng kết quả cấp dưới = ') + '</td><td class="num">' + fmt(k.total) + '</td><td></td></tr></tfoot></table></div>' +
-      '<p class="muted small" style="margin:10px 0 0">Kết quả của một người trong cây đánh giá gồm các việc tự thực hiện đã được công nhận và kết quả của những người ở cây dưới. Phiếu chưa chấm xong thì chưa được cộng. Bấm vào một dòng để mở phiếu của người đó.</p></div>';
+      '<p class="muted small" style="margin:10px 0 0">Kết quả của một người trong cây đánh giá gồm các việc tự thực hiện đã được chấm (kể cả việc cấp trên thêm) và kết quả của những người ở cây dưới. Việc nào được chấm thì được cộng ngay. Bấm vào một dòng để mở phiếu của người đó.</p></div>';
   }
   function evalHtml() {
     var d = E.d, p = d.perms, ev = d.ev, o = d.owner;
@@ -564,6 +569,7 @@
     else if (ev.status === 'da_chot') banner = '<div class="banner green">Kết quả đã được công nhận: <b>' + fmt(ev.finalTotal) + ' điểm' + (ev.rating ? ' – ' + h(ev.rating) : '') + '</b>' +
       (p.addOnly ? '. Các việc đã chấm (🔒) không sửa được; anh/chị vẫn có thể thêm việc mới rồi bấm “Nộp bổ sung” cho đến hạn chốt nhập.' : (o.id === S.user.id ? '. Muốn sửa việc đã chấm, đề nghị người phụ trách gửi nhận xét cho sửa lại.' : '')) + '</div>';
     if (o.id === S.user.id && d.period.phase === 'chot' && !p.canEdit && ev.status !== 'da_chot' && ev.status !== 'cho_duyet') banner += '<div class="banner amber">Kỳ này đã chốt nhập' + (d.period.deadline ? ' (hạn ' + fdate(d.period.deadline) + ')' : '') + ' nên anh/chị không nhập được nữa.</div>';
+    if (p.selfScore && p.canEdit) banner += '<div class="banner blue">Đồng chí thuộc cấp trưởng đơn vị nên <b>tự chấm cho mình</b>: mức A–E tự chọn chính là kết quả và được tính vào KPI ngay khi bấm <b>Lưu và chấm điểm</b>. Việc đã chấm muốn đổi thì bấm <b>Sửa</b> ở cuối dòng, chỉnh lại rồi bấm Lưu và chấm điểm.</div>';
     if (E.note) banner += '<div class="banner blue">' + h(E.note) + '</div>';
     if (p.canEdit && !d.managerName) banner += '<div class="banner amber">Anh/chị chưa được khai người phụ trách đánh giá nên chưa nộp được phiếu (vẫn lưu nháp được). Vui lòng liên hệ quản trị viên.</div>';
     var guide = p.canEdit ? '<details class="card guide no-print"' + (E.tasks.length <= 1 ? ' open' : '') + '><summary>Cách ghi phiếu' + (d.period.deadline ? ' · hạn chốt nhập <b>' + fdate(d.period.deadline) + '</b>' : '') + '</summary>' +
@@ -574,7 +580,7 @@
       return value ? '<p><b>' + label + ':</b> ' + h(value) + '</p>' : '';
     }
     var btns = '';
-    if (p.canEdit) btns += (p.addOnly ? '' : '<button class="btn" data-act="saveSelf">Lưu nháp</button>') + '<button class="btn primary" data-act="saveSelf" data-submit="1">' + (p.addOnly ? 'Nộp bổ sung' : 'Nộp phiếu') + '</button>';
+    if (p.canEdit) btns += (p.addOnly ? '' : '<button class="btn" data-act="saveSelf">Lưu nháp</button>') + '<button class="btn primary" data-act="saveSelf" data-submit="1">' + (p.selfScore ? 'Lưu và chấm điểm' : p.addOnly ? 'Nộp bổ sung' : 'Nộp phiếu') + '</button>';
 
 
 
@@ -715,7 +721,7 @@
       for (var k = i + 1; k < tree.length && tree[k].depth > x.depth; k++) inside[tree[k].u.id] = true; // đơn vị con, cháu
       var rs = ov.rows.filter(function (r) { return r.user.selfEval && inside[r.user.unitId]; });
       var d = rs.filter(function (r) { return r.status === 'da_chot'; });
-      var sum = Math.round(d.reduce(function (s, r) { return s + r.finalTotal; }, 0) * 100) / 100;
+      var sum = Math.round(rs.reduce(function (s, r) { return s + (r.mgrTotal || 0); }, 0) * 100) / 100;
       return { u: x.u, depth: x.depth, people: rs.length, done: d.length, kpi: sum, avg: rs.length ? sum / rs.length : null };
     }).filter(function (x) { return x.people; });
   }
@@ -729,11 +735,11 @@
       '<div class="card"><div class="actions no-print" style="margin-bottom:14px">' +
       (units.length > 1 ? '<select id="reportUnit" style="width:auto"><option value="">Theo cây phụ trách (tất cả)</option>' + units.map(function (u) { return '<option value="' + h(u.id) + '"' + (u.id === reportUnit ? ' selected' : '') + '>' + h(u.name) + '</option>'; }).join('') + '</select>' : '') +
       '<button class="btn primary" data-act="excel">Xuất Excel</button><button class="btn" data-act="print">In / Lưu PDF</button></div>' +
-      '<h2>Theo cá nhân</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Họ và tên</th><th>Chức vụ</th><th>Đơn vị</th><th>Cấp</th><th class="num">Số việc</th><th class="num">Tự chấm</th><th class="num">Được công nhận</th><th class="num">KPI tổng hợp</th><th class="num">Số người / đã đánh giá</th><th class="num">Quy đổi bình quân</th><th>Trạng thái</th></tr></thead><tbody>' +
+      '<h2>Theo cá nhân</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Họ và tên</th><th>Chức vụ</th><th>Đơn vị</th><th>Cấp</th><th class="num">Số việc</th><th class="num">Tự chấm</th><th class="num">Đã được chấm</th><th class="num">KPI tổng hợp</th><th class="num">Số người / đã đánh giá</th><th class="num">Quy đổi bình quân</th><th>Trạng thái</th></tr></thead><tbody>' +
       (list.map(function (x) {
         var r = x.r;
         return '<tr class="click" data-act="open" data-u="' + h(r.user.id) + '"><td>' + pad(x.depth) + '<b>' + h(r.user.fullName) + '</b></td><td>' + h(r.user.title) + '</td><td>' + h(unitName(r.user.unitId)) + '</td><td>' + h(LEVEL[r.user.level]) + '</td>' +
-          '<td class="num">' + (r.taskCount || '–') + '</td><td class="num">' + fmt(r.selfTotal) + '</td><td class="num">' + fmt(r.finalTotal) + '</td><td class="num"><b>' + fmt(r.kpi) + '</b></td>' +
+          '<td class="num">' + (r.taskCount || '–') + '</td><td class="num">' + fmt(r.selfTotal) + '</td><td class="num">' + fmt(r.mgrTotal) + '</td><td class="num"><b>' + fmt(r.kpi) + '</b></td>' +
           '<td class="num">' + r.people + ' / ' + r.done + '</td><td class="num">' + fmt(r.people ? r.kpi / r.people : null) + '</td><td>' + badge(r.status) + '</td></tr>';
       }).join('') || '<tr><td colspan="11" class="muted center">Không có dữ liệu.</td></tr>') + '</tbody></table></div>' +
       '<p class="muted small">KPI tổng hợp = điểm phiếu của chính người đó đã được công nhận + KPI của những người do người đó phụ trách. Quy đổi bình quân = KPI tổng hợp ÷ số người tự kê công việc trong phạm vi.</p></div>' +
@@ -753,12 +759,12 @@
   async function exportExcel() {
     var ov = await overview(), p = period();
     if (!window.XLSX) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
-    var head = ['TT', 'Họ và tên', 'Chức vụ', 'Đơn vị', 'Cấp', 'Người phụ trách', 'Số công việc', 'Điểm tự chấm', 'Điểm được công nhận', 'KPI tổng hợp', 'Số người trong phạm vi', 'Đã đánh giá', 'Quy đổi bình quân', 'Trạng thái'];
+    var head = ['TT', 'Họ và tên', 'Chức vụ', 'Đơn vị', 'Cấp', 'Người phụ trách', 'Số công việc', 'Điểm tự chấm', 'Điểm đã được chấm', 'KPI tổng hợp', 'Số người trong phạm vi', 'Đã đánh giá', 'Quy đổi bình quân', 'Trạng thái'];
     var names = {};
     ov.rows.forEach(function (r) { names[r.user.id] = r.user.fullName; });
     var data = treeRows(ov.rows).map(function (x, i) {
       var r = x.r;
-      return [i + 1, new Array(x.depth + 1).join('   ') + r.user.fullName, r.user.title, unitName(r.user.unitId), LEVEL[r.user.level], names[r.user.managerId] || '', r.taskCount || 0, r.selfTotal, r.finalTotal, r.kpi, r.people, r.done, r.people ? Math.round(r.kpi / r.people * 100) / 100 : '', (STATUS[r.status] || [r.status])[0]];
+      return [i + 1, new Array(x.depth + 1).join('   ') + r.user.fullName, r.user.title, unitName(r.user.unitId), LEVEL[r.user.level], names[r.user.managerId] || '', r.taskCount || 0, r.selfTotal, r.mgrTotal, r.kpi, r.people, r.done, r.people ? Math.round(r.kpi / r.people * 100) / 100 : '', (STATUS[r.status] || [r.status])[0]];
     });
     var ws = XLSX.utils.aoa_to_sheet([[S.config.orgName], ['BẢNG TỔNG HỢP KẾT QUẢ KPI – ' + p.name.toUpperCase()], [], head].concat(data));
     ws['!cols'] = [5, 30, 22, 26, 18, 24, 12, 12, 16, 13, 14, 12, 14, 16].map(function (w) { return { wch: w }; });
@@ -1006,6 +1012,20 @@
 
     taskAdd: function () { E.tasks.push(blankTask()); redrawTable(true); },
     mgrAdd: function () { var t = blankMgrTask(); E.tasks.push(t); E.sel[t.id] = true; E.showMgr = true; redrawTable(true); },
+    editRow: function (el) { // mở một việc đã chấm để sửa lại kết quả
+      var t = E.tasks[+el.dataset.t];
+      E.orig[t.id] = JSON.parse(JSON.stringify(t));
+      E.editing[t.id] = true;
+      if (E.canMgr) E.sel[t.id] = true;
+      redrawTable();
+    },
+    editCancel: function (el) { // bỏ các thay đổi đang sửa dở của việc đó
+      var i = +el.dataset.t, t = E.tasks[i];
+      if (E.orig[t.id]) E.tasks[i] = E.orig[t.id];
+      delete E.editing[t.id]; delete E.orig[t.id];
+      if (E.canMgr) E.sel[t.id] = false;
+      redrawTable();
+    },
     scoreOne: function (el) { doScore([+el.dataset.t], 'score', el); },
     scoreSel: function (el) { doScore(selectedRows(), 'score', el); },
     noteSel: function (el) { doScore(selectedRows(), 'note', el); },
@@ -1039,17 +1059,17 @@
         if (!tasks.length) return toast('Phiếu chưa có công việc nào.', true);
         for (var i = 0; i < E.tasks.length; i++) {
           var t = E.tasks[i];
-          if (tasks.indexOf(t) < 0 || t.locked) continue; // việc đã được chấm (kể cả việc người phụ trách thêm) không cần kiểm tra lại
+          if (tasks.indexOf(t) < 0 || (t.locked && !E.editing[t.id])) continue; // việc đã được chấm (kể cả việc người phụ trách thêm) không cần kiểm tra lại
           if (!t.name.trim()) return toast('Công việc số ' + (i + 1) + ' chưa ghi tên.', true);
           if (!KPI_calc(t.s)) return toast('Công việc số ' + (i + 1) + ' chưa chọn đủ 5 tiêu chí A–E.', true);
         }
-        if (!confirm('Nộp phiếu gồm ' + tasks.length + ' công việc, tổng ' + fmt(sumPoints('s')) + ' điểm tự chấm? Sau khi nộp anh/chị không sửa được, trừ khi được yêu cầu sửa.')) return;
+        if (!E.d.perms.selfScore && !confirm('Nộp phiếu gồm ' + tasks.length + ' công việc, tổng ' + fmt(sumPoints('s')) + ' điểm tự chấm? Sau khi nộp anh/chị không sửa được, trừ khi được yêu cầu sửa.')) return;
       }
       run(el, async function () {
         var d = await api('saveSelf', { periodId: S.periodId, tasks: tasks, comment: $('#selfComment').value, submit: submit });
         S.ov = null;
         setEval(d);
-        toast(submit ? 'Đã nộp phiếu.' : 'Đã lưu nháp.');
+        toast(!submit ? 'Đã lưu nháp.' : d.perms.selfScore ? 'Đã lưu và chấm điểm.' : 'Đã nộp phiếu.');
       });
     },
     decide: function (el) {

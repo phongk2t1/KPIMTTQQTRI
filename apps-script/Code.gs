@@ -66,6 +66,31 @@ function makeSheetStore_(ss) {
       T.sh.deleteRow(i + 2);
       T.rows.splice(i, 1);
     },
+    insertMany: function (t, rows) { // thêm nhiều dòng trong một lần ghi
+      if (!rows.length) return;
+      var T = load(t);
+      T.sh.getRange(T.rows.length + 2, 1, rows.length, T.head.length).setNumberFormat('@').setValues(rows.map(function (r) { return toRow(T, r); }));
+      rows.forEach(function (row) {
+        var o = {};
+        T.head.forEach(function (h) { if (h) o[h] = row[h] === undefined ? '' : row[h]; });
+        T.rows.push(o);
+      });
+    },
+    updateMany: function (t, list) { // sửa nhiều dòng, gom các dòng liền nhau thành một lần ghi
+      var T = load(t), nums = [];
+      list.forEach(function (x) {
+        var i = indexOf(T, x.id);
+        if (i < 0) return;
+        Object.keys(x.patch).forEach(function (k) { T.rows[i][k] = x.patch[k]; });
+        if (nums.indexOf(i + 2) < 0) nums.push(i + 2);
+      });
+      nums.sort(function (a, b) { return a - b; });
+      runs(nums).forEach(function (r) {
+        var block = [];
+        for (var k = 0; k < r[1]; k++) block.push(toRow(T, T.rows[r[0] - 2 + k]));
+        T.sh.getRange(r[0], 1, r[1], T.head.length).setNumberFormat('@').setValues(block);
+      });
+    },
     /* Hai hàm dưới dùng cho bảng lớn (công việc, đánh giá): chỉ tìm và đọc/ghi đúng các dòng của một phiếu,
      * không nạp cả trang tính. */
     group: function (t, field, value) {
@@ -133,6 +158,7 @@ function makeEnv_() {
         .map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
     },
     uuid: function () { return Utilities.getUuid(); },
+    defaultPass: function () { return typeof KPI_DEFAULT_PASS !== 'undefined' ? KPI_DEFAULT_PASS : null; },
     secret: function () {
       var s = props.getProperty('KPI_SECRET');
       if (!s) { s = Utilities.getUuid() + Utilities.getUuid(); props.setProperty('KPI_SECRET', s); }
@@ -149,21 +175,27 @@ function doGet() {
   return json_({ ok: true, data: 'Máy chủ KPI MTTQ đang hoạt động.' });
 }
 
+/* Các thao tác chỉ đọc không cần xếp hàng chờ khoá: nhiều người đăng nhập, xem phiếu cùng lúc vẫn chạy song song.
+ * Chỉ thao tác ghi mới lấy khoá để hai lượt ghi không chen nhau. */
+var KPI_READ_ACTIONS = { login: 1, bootstrap: 1, overview: 1, getEvaluation: 1, tasksFrom: 1, adminList: 1 };
+
 function doPost(e) {
-  var lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(25000);
-  } catch (x) {
-    return json_({ ok: false, error: 'Máy chủ đang bận, vui lòng thử lại sau ít giây.' });
+  var req;
+  try { req = JSON.parse(e.postData.contents); }
+  catch (x) { return json_({ ok: false, error: 'Yêu cầu không hợp lệ.' }); }
+  var lock = null;
+  if (!KPI_READ_ACTIONS[req.action]) {
+    lock = LockService.getScriptLock();
+    try { lock.waitLock(28000); }
+    catch (x) { return json_({ ok: false, error: 'Máy chủ đang bận ghi dữ liệu, vui lòng bấm lại sau ít giây.' }); }
   }
   try {
-    var req = JSON.parse(e.postData.contents);
     var core = KPI_createCore(makeSheetStore_(getSpreadsheet_()), makeEnv_());
     return json_(core.handle(req));
   } catch (x) {
     return json_({ ok: false, error: 'Lỗi máy chủ: ' + x.message });
   } finally {
-    lock.releaseLock();
+    if (lock) lock.releaseLock();
   }
 }
 
@@ -254,5 +286,17 @@ function migrateV2() {
       n++;
     });
     Logger.log('ĐÃ CHUYỂN XONG ' + n + ' phiếu. Trang cũ giữ lại với tên PhieuDanhGia_cu.');
+  } finally { lock.releaseLock(); }
+}
+
+/** Đặt lại mật khẩu mặc định (KPI_DEFAULT_PASS trong Seed.gs) cho mọi tài khoản KHÔNG có quyền quản trị.
+ * Mỗi người phải đổi mật khẩu khi đăng nhập lần đầu. Đồng thời điền các cột hệ thống còn trống cho dòng nhập tay. */
+function resetAllPasswords() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(28000);
+  try {
+    var core = KPI_createCore(makeSheetStore_(getSpreadsheet_()), makeEnv_());
+    var n = core.resetAllPasswords();
+    Logger.log('ĐÃ ĐẶT LẠI mật khẩu mặc định cho ' + n.reset + ' tài khoản; giữ nguyên ' + n.admin + ' tài khoản quản trị; bổ sung cột hệ thống cho ' + n.fixed + ' dòng.');
   } finally { lock.releaseLock(); }
 }

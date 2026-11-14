@@ -4,9 +4,9 @@
 window.KPI_API = (function () {
   var CFG = window.KPI_CONFIG || {};
   var LOCAL = (!CFG.API_URL || /[?&]thu=1/.test(location.search)) && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  var DB_KEY = 'kpi_local_db_v7';
+  var DB_KEY = 'kpi_local_db_v8';
   var TEST = { id: '000000000000', password: 'thu12345' }; // tài khoản thử, chỉ tồn tại trong trình duyệt khi chạy trên máy
-  var core = null;
+  var core = null, FILES = {};
 
   function localCore() {
     if (core) return core;
@@ -45,7 +45,16 @@ window.KPI_API = (function () {
         return (h1 >>> 0).toString(16) + (h2 >>> 0).toString(16);
       },
       uuid: function () { return Date.now().toString(36) + Math.random().toString(36).slice(2, 10); },
-      secret: function () { return 'local'; }
+      secret: function () { return 'local'; },
+      evidence: { // chạy thử trên máy: giữ tệp trong bộ nhớ trình duyệt thay cho Google Drive
+        save: function (cccd, period, fileName, mime, data) {
+          var id = 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+          FILES[id] = { mime: mime, data: data, path: 'KPIQTRI/' + cccd + '/' + period + '/' + fileName };
+          return { fileId: id, size: Math.floor(data.length * 3 / 4) };
+        },
+        read: function (id) { if (!FILES[id]) throw new Error('Tệp chạy thử đã mất khi tải lại trang.'); return FILES[id]; },
+        remove: function (id) { delete FILES[id]; }
+      }
     };
     core = KPI_createCore(store, env);
     if (fresh) core.seed({ admin: TEST, sample: true });
@@ -77,6 +86,7 @@ window.KPI_API = (function () {
   return {
     local: LOCAL,
     testAccount: LOCAL ? TEST : null,
+    testFiles: LOCAL ? FILES : null,
     call: call,
     resetLocal: function () { localStorage.removeItem(DB_KEY); localStorage.removeItem('kpi_token'); core = null; }
   };

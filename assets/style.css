@@ -68,6 +68,12 @@ label.chk.small { font-weight: 500; margin: 6px 0 0; color: var(--muted); }
 .side .who button { margin-top: 10px; width: 100%; justify-content: center; background: rgba(255,255,255,.06); color: #fff; border-color: rgba(255,255,255,.28); }
 .main { min-width: 0; padding: 22px 28px 60px; }
 .top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.top .ttl { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.burger { flex: none; width: 40px; height: 40px; border: 1px solid var(--line); background: #fff; border-radius: 12px; cursor: pointer; display: grid; place-content: center; gap: 4px; box-shadow: var(--shadow); }
+.burger span { display: block; width: 18px; height: 2px; border-radius: 2px; background: var(--pri-d); }
+.burger:hover { background: var(--pri-l); border-color: #b9c8e6; }
+.shell.side-off { grid-template-columns: 1fr; }
+.shell.side-off .side { display: none; }
 .top .period { display: flex; align-items: center; gap: 8px; }
 .top .period select { width: auto; font-weight: 600; }
 

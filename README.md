@@ -1,4 +1,6 @@
-# Hệ thống đánh giá KPI – MTTQ Việt Nam
+# KPI CÁN BỘ CÔNG CHỨC
+
+Phần mềm đánh giá KPI dành cho cán bộ công chức.
 
 Trang web tĩnh (GitHub Pages) + máy chủ Google Apps Script (dự án `KPIMTTQQTRI`) + dữ liệu trong bảng tính Google `KPIMTTQQTRI`.
 
@@ -34,6 +36,29 @@ Trang web tĩnh (GitHub Pages) + máy chủ Google Apps Script (dự án `KPIMTT
 4. **Quy đổi bình quân** = KPI tổng hợp ÷ số người tự kê công việc trong phạm vi. Đây là cách quy đổi do người dựng hệ thống chọn; nếu cơ quan quy đổi theo cách khác thì sửa ở `assets/app.js` (các chỗ ghi "Quy đổi bình quân").
 
 Quyền xem: mỗi người thấy phiếu của mình; người phụ trách thấy mọi người nằm dưới mình trong cây phụ trách (mọi cấp); quản trị viên thấy tất cả. Chỉ người phụ trách trực tiếp mới đánh giá được phiếu. Quản trị viên có thể mở lại một phiếu đã công nhận để đánh giá lại.
+
+## Kỳ đánh giá, chốt nhập và khoá việc đã chấm
+
+- Mỗi kỳ có **hạn chốt nhập** (mặc định ngày cuối kỳ). Qua hạn, hoặc khi quản trị viên đặt trạng thái "Đã chốt nhập", cán bộ không nhập được nữa; người phụ trách vẫn chấm được. "Đã khoá hẳn" thì không ai thay đổi được.
+- Công việc đã được người phụ trách chấm thì bị khoá (🔒): cán bộ không sửa, không xoá được. Khi kỳ còn mở nhập, cán bộ vẫn thêm được việc mới rồi bấm **Nộp bổ sung**.
+- Muốn sửa việc đã chấm, người phụ trách trực tiếp bấm **Cho đánh giá lại** (hoặc **Yêu cầu sửa**); phiếu đó sửa được cả khi kỳ đã chốt nhập.
+
+## Việc lặp lại và lấy việc từ kỳ trước
+
+- Trên phiếu, tích **Việc lặp lại** cho những việc làm thường xuyên. Sang kỳ mới, khi cán bộ mở phiếu chưa lập, các việc này tự hiện sẵn kèm mức tự chấm.
+- Nút **Lấy việc từ kỳ trước**: chọn một kỳ đã có phiếu, tích các việc cần chuyển sang kỳ hiện tại.
+- Việc chuyển sang nhớ kết quả người phụ trách đã chấm ở kỳ gốc. Khi chấm, người phụ trách bấm **Lấy kết quả kỳ trước** để dùng lại, hoặc **Lấy theo mức tự chấm**, rồi chỉ chỉnh chỗ cần thiết.
+
+## Tổng quan (dashboard)
+
+- Số đơn vị, số cán bộ công chức, số đã được đánh giá, số chưa; chọn kỳ ở góc trên để thống kê theo kỳ.
+- Biểu đồ tiến độ chung và tiến độ từng đơn vị; bấm vào một đơn vị để xem tiến độ từng cá nhân.
+- Danh sách người phụ trách: bấm vào cấp trưởng, cấp phó để xem các cá nhân họ phụ trách.
+- Thẻ **Nhắc nhở**: ai chưa nộp, người phụ trách nào còn phiếu chờ chấm; có nút chép nội dung để gửi qua Zalo, email (phần mềm không tự gửi tin).
+
+## Dữ liệu mẫu
+
+`apps-script/DuLieuMau.gs` (không đưa lên GitHub) chứa các phiếu thật lấy từ tệp Excel. Hàm `importSample()` trong `Code.gs` nạp chúng vào bảng tính: mỗi tháng một kỳ; tháng nào người phụ trách đã chấm đủ thì ở trạng thái đã đánh giá, còn lại chờ chấm.
 
 ## Cách chấm điểm một công việc (theo tệp mẫu `Văn phòng.xlsx`)
 
@@ -72,7 +97,7 @@ Quản trị viên đăng nhập bằng CCCD, vào **Quản trị**:
 
 ## Lưu ý vận hành
 
-- **Không đưa lên GitHub** tệp Excel chứa dữ liệu thật và tệp `apps-script/Seed.gs`. `.gitignore` đã chặn cả hai.
+- **Không đưa lên GitHub** tệp Excel chứa dữ liệu thật, `apps-script/Seed.gs` và `apps-script/DuLieuMau.gs`. `.gitignore` đã chặn.
 - Mật khẩu chỉ lưu dạng băm SHA-256 có muối. Quên mật khẩu quản trị: chạy hàm `resetAdminPassword` trong Apps Script.
 - Bảng tính chứa CCCD, số điện thoại, email: chỉ chia sẻ bảng tính cho người có trách nhiệm. Số điện thoại và email chỉ hiện với chính người đó và quản trị viên.
 - Không đổi tên trang tính và dòng tiêu đề trong bảng tính. Sửa tay dữ liệu thì giữ đúng mã đơn vị và CCCD.
@@ -86,7 +111,7 @@ Quản trị viên đăng nhập bằng CCCD, vào **Quản trị**:
 python3 -m http.server 8765
 ```
 
-Mở `http://localhost:8765`. Khi `API_URL` trống và đang ở `localhost`, trang dùng dữ liệu mẫu lưu trong trình duyệt (tài khoản thử hiện ngay dưới ô đăng nhập). Trên trang thật không có chế độ này.
+Mở `http://localhost:8765`. Mở `http://localhost:8765/?thu=1` (hoặc để trống `API_URL`) thì trang dùng dữ liệu mẫu lưu trong trình duyệt (tài khoản thử hiện ngay dưới ô đăng nhập). Trên trang thật không có chế độ này.
 
 ## Khi sửa lõi nghiệp vụ
 

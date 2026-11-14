@@ -67,6 +67,9 @@ Phần cán bộ tự đánh giá và phần người phụ trách đánh giá n
 - Mức A–E được điền sẵn: việc lặp lại lấy kết quả chấm kỳ trước, việc khác lấy theo mức cán bộ tự chọn. Người phụ trách đổi mức nào cũng được, kể cả với việc đã chấm.
 - **Chấm điểm** (từng dòng) hoặc **Chấm điểm các việc đã chọn**: lưu điểm và khoá các việc đó. Khi mọi việc của phiếu đã được chấm, phiếu chuyển sang "Đã đánh giá" và điểm được tính vào KPI.
 - **Gửi nhận xét, cho sửa lại**: lưu nhận xét và mở khoá các việc đã chọn để cán bộ điều chỉnh; cán bộ thấy nhận xét ngay tại công việc đó trên phiếu của mình.
+- **Sửa**: việc đã chấm có nút Sửa ở cuối dòng; bấm Sửa để đổi mức A–E hoặc nhận xét, rồi bấm Chấm điểm lại (hoặc Huỷ để giữ kết quả cũ).
+- **Việc đã chấm được cộng ngay** vào KPI của người đó và của các cấp trên, kể cả khi phiếu chưa chấm xong hết và kể cả việc do cấp trên thêm.
+- **Trưởng đơn vị, thủ trưởng có tự kê công việc thì tự chấm cho mình**: mức tự chọn là kết quả, tính ngay khi bấm Lưu và chấm điểm; việc đã chấm cũng có nút Sửa.
 - **Thêm công việc cho cấp dưới**: người phụ trách ghi tên việc, chấm A–E rồi bấm Chấm điểm; việc được đưa thẳng vào phiếu của cấp dưới (kể cả khi cấp dưới chưa lập phiếu), có nhãn "Người phụ trách thêm". Cột tự chấm của việc này để trống và không tính vào điểm tự chấm.
 - Trong bảng tính: nhận xét nằm ở cột "Nhận xét" của `DanhGia` và "Nhận xét của người đánh giá" của `PhieuDanhGia`; việc do người phụ trách thêm có CCCD ở cột "Người thêm việc (CCCD)". Sau khi nâng cấp có thêm cột, chạy hàm `upgradeSheets()` một lần.
 

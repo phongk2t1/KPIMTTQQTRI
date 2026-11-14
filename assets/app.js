@@ -116,6 +116,7 @@
     items.push(['matkhau', 'Đổi mật khẩu']);
     return items;
   }
+  function sideOff() { try { return localStorage.getItem('kpi_side') === 'off'; } catch (e) { return false; } }
   function shell(route, title, showPeriod) {
     var nav = navItems().map(function (n) {
       var on = route === n[0] || (n[0] === (S.hasReports ? 'duyet' : 'baocao') && route === 'phieu');
@@ -124,11 +125,11 @@
     var sel = showPeriod && S.periods.length ? '<label class="period no-print"><span class="muted small">Kỳ đánh giá</span><select id="periodSel">' +
       S.periods.map(function (p) { return '<option value="' + h(p.id) + '"' + (p.id === S.periodId ? ' selected' : '') + '>' + h(p.name) + (p.phase === 'khoa' ? ' (đã khoá)' : p.phase === 'chot' ? ' (đã chốt nhập)' : '') + '</option>'; }).join('') +
       '</select></label>' : '';
-    app.innerHTML = '<div class="shell"><aside class="side">' +
+    app.innerHTML = '<div class="shell' + (sideOff() ? ' side-off' : '') + '"><aside class="side">' +
       '<div class="brand">' + LOGO + '<div><b>' + APP_TITLE + '</b><small>' + h(S.config.orgName || APP_SUB) + '</small></div></div>' + nav +
       '<div class="who"><span><b>' + h(S.user.fullName) + '</b>' + h(S.user.title || LEVEL[S.user.level]) + '<br>' + h(unitName(S.user.unitId)) + '</span>' +
       '<button class="btn" data-act="logout">Đăng xuất</button></div></aside>' +
-      '<main class="main"><div class="top"><h1>' + h(title) + '</h1>' + sel + '</div><div id="view"><div class="loading">Đang tải…</div></div></main></div>';
+      '<main class="main"><div class="top"><div class="ttl"><button class="burger no-print" data-act="toggleSide" aria-label="Ẩn hoặc hiện bảng điều hướng bên trái" title="Ẩn / hiện bảng bên trái"><span></span><span></span><span></span></button><h1>' + h(title) + '</h1></div>' + sel + '</div><div id="view"><div class="loading">Đang tải…</div></div></main></div>';
     var ps = $('#periodSel');
     if (ps) ps.addEventListener('change', function () { S.periodId = ps.value; S.ov = null; render(); });
     return $('#view');
@@ -883,6 +884,12 @@
   /* ---------- Xử lý thao tác ---------- */
   var ACT = {
     logout: function () { logout(); },
+    toggleSide: function () { // ẩn/hiện bảng bên trái, nhớ lựa chọn cho lần sau
+      var off = !sideOff();
+      try { localStorage.setItem('kpi_side', off ? 'off' : 'on'); } catch (e) { /* không lưu được thì chỉ đổi trong phiên này */ }
+      var sh = $('.shell');
+      if (sh) sh.classList.toggle('side-off', off);
+    },
     dashUnit: function (el) { DASH = DASH.type === 'unit' && DASH.id === el.dataset.id ? { type: '', id: '' } : { type: 'unit', id: el.dataset.id }; redrawDash(); },
     dashUser: function (el) { DASH = { type: 'user', id: el.dataset.u }; redrawDash(); },
     dashBack: function () { DASH = { type: '', id: '' }; redrawDash(); },

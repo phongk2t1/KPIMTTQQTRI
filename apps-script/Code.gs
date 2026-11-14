@@ -208,6 +208,16 @@ function ensureSheets_(ss) {
       sh.getRange(1, 1, sh.getMaxRows(), head.length).setNumberFormat('@');
       sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold').setBackground('#dbeafe').setWrap(true);
       sh.setFrozenRows(1);
+    } else { // trang đã có: thêm vào cuối dòng tiêu đề những cột mới của bản nâng cấp
+      var lastCol = sh.getLastColumn();
+      var have = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h).trim(); });
+      var missing = head.filter(function (h) { return have.indexOf(h) < 0; });
+      if (missing.length) {
+        if (lastCol + missing.length > sh.getMaxColumns()) sh.insertColumnsAfter(sh.getMaxColumns(), lastCol + missing.length - sh.getMaxColumns());
+        sh.getRange(1, lastCol + 1, sh.getMaxRows(), missing.length).setNumberFormat('@');
+        sh.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]).setFontWeight('bold').setBackground('#dbeafe').setWrap(true);
+        Logger.log('Trang ' + KPI_SHEETS[t] + ': thêm cột ' + missing.join(', '));
+      }
     }
   });
   ['Sheet1', 'Trang tính1', 'Trang tính 1'].forEach(function (name) {
@@ -299,4 +309,10 @@ function resetAllPasswords() {
     var n = core.resetAllPasswords();
     Logger.log('ĐÃ ĐẶT LẠI mật khẩu mặc định cho ' + n.reset + ' tài khoản; giữ nguyên ' + n.admin + ' tài khoản quản trị; bổ sung cột hệ thống cho ' + n.fixed + ' dòng.');
   } finally { lock.releaseLock(); }
+}
+
+/** Chạy sau mỗi lần nâng cấp có thêm cột: bổ sung các cột mới vào dòng tiêu đề của những trang tính đã có. Không đụng tới dữ liệu. */
+function upgradeSheets() {
+  ensureSheets_(getSpreadsheet_());
+  Logger.log('ĐÃ KIỂM TRA XONG các trang tính.');
 }

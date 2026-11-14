@@ -35,6 +35,8 @@ Trang web tĩnh (GitHub Pages) + máy chủ Google Apps Script (dự án `KPIMTT
    - **Thủ trưởng cơ quan** = tổng KPI của các đơn vị.
 4. **Quy đổi bình quân** = KPI tổng hợp ÷ số người tự kê công việc trong phạm vi. Đây là cách quy đổi do người dựng hệ thống chọn; nếu cơ quan quy đổi theo cách khác thì sửa ở `assets/app.js` (các chỗ ghi "Quy đổi bình quân").
 
+Trên phiếu của người có cấp dưới, dưới bảng công việc tự thực hiện có thẻ **Kết quả KPI**: liệt kê từng người do người đó phụ trách kèm kết quả, và tổng KPI = việc tự thực hiện + kết quả cấp dưới. Người phụ trách cấp trên mở phiếu sẽ thấy cả hai phần.
+
 Quyền xem: mỗi người thấy phiếu của mình; người phụ trách thấy mọi người nằm dưới mình trong cây phụ trách (mọi cấp); quản trị viên thấy tất cả. Chỉ người phụ trách trực tiếp mới đánh giá được phiếu. Quản trị viên có thể mở lại một phiếu đã công nhận để đánh giá lại.
 
 ## Cách lưu phiếu trong bảng tính

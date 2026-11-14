@@ -148,6 +148,37 @@
     }).catch(function () { /* số đếm không quan trọng bằng nội dung trang */ });
   }
 
+  function selectedRows() { var out = []; E.tasks.forEach(function (t, i) { if (E.sel[t.id]) out.push(i); }); return out; }
+  /** Người phụ trách chấm (mode 'score') hoặc chỉ gửi nhận xét và mở cho sửa lại (mode 'note') các công việc ở những dòng đã cho. */
+  function doScore(rows, mode, btn) {
+    if (!rows.length) return toast('Chưa chọn công việc nào. Tích ô ở đầu dòng công việc.', true);
+    for (var k = 0; k < rows.length; k++) {
+      var t = E.tasks[rows[k]], no = 'Công việc số ' + (rows[k] + 1);
+      if (t.isNew && !String(t.name).trim()) return toast(no + ' (việc thêm mới) chưa ghi tên.', true);
+      if (mode === 'score' && !KPI_calc(t.m)) return toast(no + ' chưa chọn đủ 5 mức A–E ở khối lãnh đạo chấm.', true);
+      if (mode === 'note' && t.isNew) return toast(no + ' là việc mới thêm, hãy bấm Chấm điểm để lưu.', true);
+      if (mode === 'note' && !String(t.note || '').trim()) return toast(no + ' chưa có nhận xét. Ghi nhận xét để cán bộ biết cần điều chỉnh gì.', true);
+    }
+    if (rows.length > 1 && !confirm((mode === 'score' ? 'Chấm điểm ' : 'Gửi nhận xét và cho sửa lại ') + rows.length + ' công việc đã chọn?')) return;
+    var sent = rows.map(function (i) { return E.tasks[i]; });
+    var keep = E.tasks.filter(function (t) { return sent.indexOf(t) < 0; }); // giữ lại những gì đang sửa dở ở các dòng khác
+    run(btn, async function () {
+      var d = await api('score', {
+        periodId: S.periodId, userId: E.d.owner.id, mode: mode,
+        tasks: sent.map(function (t) { return t.isNew ? { isNew: true, name: t.name, product: t.product, qty: t.qty, month: t.month, m: t.m, note: t.note } : { id: t.id, m: t.m, note: t.note }; })
+      });
+      S.ov = null;
+      setEval(d);
+      keep.forEach(function (k) {
+        if (k.isNew) { E.tasks.push(k); E.sel[k.id] = true; return; }
+        var cur = E.tasks.filter(function (x) { return x.id === k.id; })[0];
+        if (cur && !cur.locked) { cur.m = k.m; cur.note = k.note; }
+      });
+      redrawTable();
+      toast(mode === 'score' ? 'Đã chấm điểm ' + sent.length + ' công việc.' : 'Đã gửi nhận xét, cán bộ được sửa lại ' + sent.length + ' công việc.');
+    });
+  }
+
   var PREV = [];
   async function loadPrev() {
     var box = $('#prevList'), sel = $('#prevSel');
@@ -414,10 +445,11 @@
   }
   function setEval(d) {
     var p = d.perms;
-    E = { d: d, tasks: JSON.parse(JSON.stringify(d.ev.tasks || [])), months: periodMonths(d.period), canMgr: p.canReview };
+    E = { d: d, tasks: JSON.parse(JSON.stringify(d.ev.tasks || [])), months: periodMonths(d.period), canMgr: p.canScore, sel: {} };
     E.tasks.forEach(function (t) {
       if (!t.s) t.s = [0, 0, 0, 0, 0];
-      if (E.canMgr && !KPI_calc(t.m)) t.m = (KPI_calc(t.pm) ? t.pm : t.s).slice(); // điền sẵn: kết quả kỳ trước nếu có, không thì theo mức cán bộ tự chọn
+      if (E.canMgr && !KPI_calc(t.m)) t.m = (KPI_calc(t.pm) ? t.pm : t.s).slice(); // điền sẵn: việc lặp lại lấy kết quả chấm kỳ trước, việc khác theo mức cán bộ tự chọn; người đánh giá đổi được
+      if (E.canMgr && !t.locked) E.sel[t.id] = true;                                // mặc định chọn sẵn các việc chưa chấm
     });
     E.showMgr = E.canMgr || E.tasks.some(function (t) { return KPI_calc(t.m); });
     E.note = '';
@@ -444,42 +476,54 @@
     return '<td class="num calc" data-calc="' + key + 'S">' + (c ? fmt(c.s) : '') + '</td><td class="center calc" data-calc="' + key + 'N">' + (c ? '<span class="n n' + c.n.slice(1) + '">' + c.n + '</span>' : '') +
       '</td><td class="num calc" data-calc="' + key + 'P"><b>' + (c ? fmt(c.point) : '') + '</b></td>';
   }
+  function blankMgrTask() { return { id: newId(), isNew: true, name: '', product: 'Công văn', qty: 1, month: E.months[E.months.length - 1], s: [0, 0, 0, 0, 0], m: [0, 0, 0, 0, 0], link: '', note: '' }; }
   function taskRow(t, ti) {
-    var canAll = E.d.perms.canEdit, edit = canAll && !t.locked, months = E.months.indexOf(t.month) < 0 && t.month ? E.months.concat([t.month]) : E.months;
-    var name = edit ? '<textarea rows="3" data-fld="name" data-t="' + ti + '" placeholder="Tên công việc (ghi thật rõ việc đã làm)">' + h(t.name) + '</textarea>' +
-      '<div class="ev-add no-print"><input type="url" data-fld="link" data-t="' + ti + '" value="' + h(t.link || '') + '" placeholder="Đường dẫn minh chứng (không bắt buộc)">' +
-      (S.canUpload ? '<label class="btn sm">Tải tệp<input type="file" hidden data-upfile="' + ti + '"></label>' : '') + '</div>' :
+    var canAll = E.d.perms.canEdit, mgr = E.canMgr;
+    var edit = (canAll && !t.locked) || (mgr && t.isNew); // cán bộ sửa việc chưa bị khoá; người phụ trách sửa việc mình vừa thêm
+    var months = E.months.indexOf(t.month) < 0 && t.month ? E.months.concat([t.month]) : E.months;
+    var name = edit ? '<textarea rows="3" data-fld="name" data-t="' + ti + '" placeholder="' + (t.isNew ? 'Tên công việc thêm cho cấp dưới' : 'Tên công việc (ghi thật rõ việc đã làm)') + '">' + h(t.name) + '</textarea>' +
+      (t.isNew ? '' : '<div class="ev-add no-print"><input type="url" data-fld="link" data-t="' + ti + '" value="' + h(t.link || '') + '" placeholder="Đường dẫn minh chứng (không bắt buộc)">' +
+        (S.canUpload ? '<label class="btn sm">Tải tệp<input type="file" hidden data-upfile="' + ti + '"></label>' : '') + '</div>') :
       '<div class="tname">' + h(t.name) + '</div>' + (t.link ? '<a class="small" href="' + h(t.link) + '" target="_blank" rel="noopener">Minh chứng</a>' : '');
-    var pc = KPI_calc(t.pm), tags = (t.locked ? '<span class="badge b-green" title="Người phụ trách đã chấm, cán bộ không sửa được">🔒 Đã chấm</span>' : '') +
+    var pc = KPI_calc(t.pm), tags = (t.locked ? '<span class="badge b-green" title="Người phụ trách đã chấm, cán bộ không sửa được">🔒 Đã chấm' + (t.mDate ? ' ' + h(t.mDate.slice(0, 5)) + ' ' + h(String(t.mTime || '').slice(0, 5)) : '') + '</span>' : '') +
+      (t.isNew ? '<span class="badge b-amber">Việc mới, chưa lưu</span>' : '') + (t.by ? '<span class="badge b-purple">Người phụ trách thêm</span>' : '') +
       (!edit && t.repeat ? '<span class="badge b-blue">Lặp lại</span>' : '') + (t.from ? '<span class="badge b-gray">Từ ' + h(t.from) + '</span>' : '') +
       (pc ? '<span class="badge b-purple">Kỳ trước chấm ' + pc.n + ' · ' + fmt(pc.point) + 'đ</span>' : '');
-    name += (edit ? '<label class="chk small no-print"><input type="checkbox" data-fld="repeat" data-t="' + ti + '"' + (t.repeat ? ' checked' : '') + '>Việc lặp lại: tự đưa sang kỳ sau</label>' : '') + (tags ? '<div class="tags">' + tags + '</div>' : '');
-    var cells = '<td class="center c-tt">' + (ti + 1) + '</td><td class="c-name">' + name + '</td>' +
+    name += (edit && !t.isNew ? '<label class="chk small no-print"><input type="checkbox" data-fld="repeat" data-t="' + ti + '"' + (t.repeat ? ' checked' : '') + '>Việc lặp lại: tự đưa sang kỳ sau</label>' : '') + (tags ? '<div class="tags">' + tags + '</div>' : '') +
+      (!mgr && t.note ? '<div class="mnote"><b>Nhận xét của người phụ trách:</b> ' + h(t.note) + '</div>' : ''); // người tự chấm thấy nhận xét ngay tại công việc
+    var cells = '<td class="center c-tt">' + (mgr ? '<label class="pick1"><input type="checkbox" data-sel="' + h(t.id) + '"' + (E.sel[t.id] ? ' checked' : '') + ' aria-label="Chọn công việc ' + (ti + 1) + '"><span>' + (ti + 1) + '</span></label>' : (ti + 1)) + '</td><td class="c-name">' + name + '</td>' +
       (edit ? '<td><select data-fld="product" data-t="' + ti + '" aria-label="Sản phẩm">' + opts(M.products.map(function (x) { return [x, x]; }), t.product) + '</select></td>' +
         '<td><input type="number" min="0.01" step="any" data-fld="qty" data-t="' + ti + '" value="' + h(t.qty) + '" aria-label="Số lượng sản phẩm"></td>' +
         '<td><select data-fld="month" data-t="' + ti + '" aria-label="Tháng thực hiện">' + opts(months.map(function (x) { return [x, x]; }), t.month) + '</select></td>'
         : '<td>' + h(t.product) + '</td><td class="num">' + fmt(t.qty) + '</td><td class="nowrap">' + h(t.month) + '</td>');
-    for (var i = 0; i < 5; i++) cells += levelCell(t, ti, 's', i, edit);
+    for (var i = 0; i < 5; i++) cells += levelCell(t, ti, 's', i, edit && !t.isNew);
     cells += calcCells(t, 's');
     if (E.showMgr) {
-      for (var k = 0; k < 5; k++) cells += levelCell(t, ti, 'm', k, E.canMgr);
+      for (var k = 0; k < 5; k++) cells += levelCell(t, ti, 'm', k, mgr);
       cells += calcCells(t, 'm');
     }
-    if (canAll) cells += '<td class="no-print center">' + (edit ? '<button type="button" class="btn sm danger" title="Xoá dòng này" data-act="taskDel" data-t="' + ti + '">×</button>' : '') + '</td>';
+    if (mgr) {
+      cells += '<td class="c-note"><textarea rows="2" data-fld="note" data-t="' + ti + '" placeholder="Nhận xét cho việc này (không bắt buộc)" aria-label="Nhận xét cho công việc ' + (ti + 1) + '">' + h(t.note || '') + '</textarea></td>' +
+        '<td class="no-print center nowrap"><button type="button" class="btn sm ok" data-act="scoreOne" data-t="' + ti + '">Chấm điểm</button>' +
+        (t.isNew ? ' <button type="button" class="btn sm danger" title="Bỏ việc vừa thêm" data-act="taskDel" data-t="' + ti + '">×</button>' : '') + '</td>';
+    } else if (canAll) cells += '<td class="no-print center">' + (edit ? '<button type="button" class="btn sm danger" title="Xoá dòng này" data-act="taskDel" data-t="' + ti + '">×</button>' : '') + '</td>';
     return '<tr data-row="' + ti + '"' + (t.locked ? ' class="locked"' : '') + '>' + cells + '</tr>';
   }
   function tableHtml() {
-    var edit = E.d.perms.canEdit, fh = M.factors.map(function (f, i) { return '<th class="fh" title="' + h(f.name) + ' (trọng số ' + M.weights[i] + '%)"><b>' + f.key + '</b> – ' + h(f.name) + '</th>'; }).join('');
+    var edit = E.d.perms.canEdit, mgr = E.canMgr, fh = M.factors.map(function (f, i) { return '<th class="fh" title="' + h(f.name) + ' (trọng số ' + M.weights[i] + '%)"><b>' + f.key + '</b> – ' + h(f.name) + '</th>'; }).join('');
     var calcH = '<th class="num">S</th><th>N</th><th class="num">Điểm của N</th>';
     return '<div class="tbl-wrap sheet"><table class="tbl sheet"><thead><tr>' +
-      '<th rowspan="2" class="c-tt">TT</th><th rowspan="2" class="c-name">Tên công việc</th><th rowspan="2">Sản phẩm</th><th rowspan="2">Số lượng sản phẩm</th><th rowspan="2">Tháng thực hiện</th>' +
+      '<th rowspan="2" class="c-tt">' + (mgr ? '<label class="pick1"><input type="checkbox" id="selAll" aria-label="Chọn tất cả công việc"><span>TT</span></label>' : 'TT') + '</th><th rowspan="2" class="c-name">Tên công việc</th><th rowspan="2">Sản phẩm</th><th rowspan="2">Số lượng sản phẩm</th><th rowspan="2">Tháng thực hiện</th>' +
       '<th colspan="5" class="g-self">Cán bộ tự đánh giá</th><th colspan="3" class="g-calc">Công thức tự tính toán</th>' +
       (E.showMgr ? '<th colspan="5" class="g-mgr">Lãnh đạo trực tiếp quản lý chấm</th><th colspan="3" class="g-calc">Công thức tự tính toán</th>' : '') +
-      (edit ? '<th rowspan="2" class="no-print"></th>' : '') + '</tr><tr>' + fh + calcH + (E.showMgr ? fh + calcH : '') + '</tr></thead><tbody>' +
+      (mgr ? '<th rowspan="2" class="g-mgr">Nhận xét từng việc</th><th rowspan="2" class="no-print g-mgr">Chấm</th>' : edit ? '<th rowspan="2" class="no-print"></th>' : '') + '</tr><tr>' + fh + calcH + (E.showMgr ? fh + calcH : '') + '</tr></thead><tbody>' +
       (E.tasks.map(taskRow).join('') || '<tr><td colspan="30" class="muted center">Phiếu chưa có công việc nào.</td></tr>') + '</tbody>' +
       '<tfoot><tr><td class="c-tt"></td><td class="c-name">Tổng cộng: <span id="tCount"></span> công việc</td><td></td><td class="num" id="tQty"></td><td></td>' +
       '<td colspan="7" class="right">Tổng điểm tự chấm (số lượng × điểm của N)</td><td class="num" id="tSelf"></td>' +
-      (E.showMgr ? '<td colspan="7" class="right">Tổng điểm được công nhận</td><td class="num" id="tMgr"></td>' : '') + (edit ? '<td class="no-print"></td>' : '') + '</tr></tfoot></table></div>' +
+      (E.showMgr ? '<td colspan="7" class="right">Tổng điểm các việc đã được chấm</td><td class="num" id="tMgr"></td>' : '') + (mgr ? '<td></td><td class="no-print"></td>' : edit ? '<td class="no-print"></td>' : '') + '</tr></tfoot></table></div>' +
+      (mgr ? '<div class="actions no-print" style="margin-top:12px"><button class="btn ok" data-act="scoreSel">Chấm điểm các việc đã chọn</button><button class="btn warn" data-act="noteSel">Gửi nhận xét, cho sửa lại</button>' +
+        '<button class="btn" data-act="mgrAdd">＋ Thêm công việc cho cấp dưới</button>' +
+        (E.tasks.some(function (t) { return KPI_calc(t.pm); }) ? '<button class="btn" data-act="fillMgr" data-src="pm">Lấy kết quả kỳ trước</button>' : '') + '<button class="btn" data-act="fillMgr" data-src="s">Lấy theo mức tự chấm</button></div>' : '') +
       (edit ? '<div class="actions no-print" style="margin-top:12px"><button class="btn primary" data-act="taskAdd">＋ Thêm công việc</button><button class="btn" data-act="pasteOpen">Dán nhiều dòng từ Excel</button>' + ((E.d.myPeriods || []).length ? '<button class="btn" data-act="prevOpen">Lấy việc từ kỳ trước</button>' : '') + '</div>' : '');
   }
   function redrawTable(focusLast) {
@@ -497,10 +541,10 @@
     var banner = '';
     if (d.period.phase === 'khoa') banner = '<div class="banner gray">Kỳ đánh giá đã khoá, phiếu chỉ xem.</div>';
     else if (ev.status === 'yeu_cau_sua') banner = '<div class="banner amber"><b>Phiếu được yêu cầu sửa.</b> ' + h(ev.mgrComment || '') + '</div>';
-    else if (p.canReview) banner = '<div class="banner blue">Phiếu chờ anh/chị đánh giá. Khối “Lãnh đạo trực tiếp quản lý chấm” đã điền sẵn theo mức cán bộ tự chọn, chỉnh lại những mức chưa phù hợp rồi bấm <b>Công nhận kết quả</b>.</div>';
+    else if (p.canScore && ev.status !== 'da_chot') banner = '<div class="banner blue">' + (ev.status === 'cho_duyet' ? 'Phiếu chờ anh/chị chấm. ' : 'Cán bộ chưa nộp phiếu, anh/chị vẫn chấm trước hoặc thêm việc được. ') + 'Tích ô đầu dòng các việc muốn chấm, chỉnh mức A–E ở khối “Lãnh đạo trực tiếp quản lý chấm” nếu cần, rồi bấm <b>Chấm điểm</b>. Việc lặp lại được điền sẵn kết quả chấm kỳ trước, việc khác điền theo mức cán bộ tự chọn; mức nào cũng đổi được.</div>';
     else if (ev.status === 'cho_duyet') banner = '<div class="banner blue">Phiếu đã nộp, đang chờ ' + h(d.managerName || 'người phụ trách') + ' đánh giá.</div>';
     else if (ev.status === 'da_chot') banner = '<div class="banner green">Kết quả đã được công nhận: <b>' + fmt(ev.finalTotal) + ' điểm' + (ev.rating ? ' – ' + h(ev.rating) : '') + '</b>' +
-      (p.addOnly ? '. Các việc đã chấm (🔒) không sửa được; anh/chị vẫn có thể thêm việc mới rồi bấm “Nộp bổ sung” cho đến hạn chốt nhập.' : (o.id === S.user.id ? '. Muốn sửa, đề nghị người phụ trách bấm “Cho đánh giá lại”.' : '')) + '</div>';
+      (p.addOnly ? '. Các việc đã chấm (🔒) không sửa được; anh/chị vẫn có thể thêm việc mới rồi bấm “Nộp bổ sung” cho đến hạn chốt nhập.' : (o.id === S.user.id ? '. Muốn sửa việc đã chấm, đề nghị người phụ trách gửi nhận xét cho sửa lại.' : '')) + '</div>';
     if (o.id === S.user.id && d.period.phase === 'chot' && !p.canEdit && ev.status !== 'da_chot' && ev.status !== 'cho_duyet') banner += '<div class="banner amber">Kỳ này đã chốt nhập' + (d.period.deadline ? ' (hạn ' + fdate(d.period.deadline) + ')' : '') + ' nên anh/chị không nhập được nữa.</div>';
     if (E.note) banner += '<div class="banner blue">' + h(E.note) + '</div>';
     if (p.canEdit && !d.managerName) banner += '<div class="banner amber">Anh/chị chưa được khai người phụ trách đánh giá nên chưa nộp được phiếu (vẫn lưu nháp được). Vui lòng liên hệ quản trị viên.</div>';
@@ -513,9 +557,9 @@
     }
     var btns = '';
     if (p.canEdit) btns += (p.addOnly ? '' : '<button class="btn" data-act="saveSelf">Lưu nháp</button>') + '<button class="btn primary" data-act="saveSelf" data-submit="1">' + (p.addOnly ? 'Nộp bổ sung' : 'Nộp phiếu') + '</button>';
-    if (p.canReview) btns += (E.tasks.some(function (t) { return KPI_calc(t.pm); }) ? '<button class="btn" data-act="fillMgr" data-src="pm">Lấy kết quả kỳ trước</button>' : '') + '<button class="btn" data-act="fillMgr" data-src="s">Lấy theo mức tự chấm</button>';
-    if (p.canRedo) btns += '<button class="btn warn" data-act="redo">Cho đánh giá lại</button>';
-    if (p.canReview) btns += '<button class="btn ok" data-act="decide" data-d="approve">Công nhận kết quả</button><button class="btn warn" data-act="decide" data-d="return">Yêu cầu sửa</button>';
+
+
+
     if (p.canReopen) btns += '<button class="btn warn" data-act="reopen">Mở lại để đánh giá lại</button>';
     btns += '<button class="btn" data-act="excelEval">Xuất Excel</button><button class="btn" data-act="print">In / Lưu PDF</button>';
 
@@ -526,7 +570,7 @@
       '<div class="card"><div id="taskBox">' + tableHtml() + '</div></div>' +
       '<div class="card"><h2>Nhận xét</h2>' +
       (commentBox('selfComment', 'Tự nhận xét của cán bộ', ev.selfComment, p.canEdit, 'Không bắt buộc') +
-        commentBox('mgrComment', 'Nhận xét của người phụ trách', ev.mgrComment, p.canReview, 'Bắt buộc khi yêu cầu sửa') || '<div class="muted">Chưa có nhận xét.</div>') +
+        commentBox('mgrComment', 'Nhận xét chung của người phụ trách', ev.mgrComment, false, '') || '<div class="muted">Chưa có nhận xét.</div>') +
       '<div class="actions no-print" style="margin-top:8px">' + btns + '</div></div>' +
       '<div class="sign"><div><b>Người tự đánh giá</b></div><div></div><div><b>Lãnh đạo trực tiếp quản lý</b></div></div>' +
       (d.history.length ? '<div class="card no-print"><h2>Lịch sử xử lý</h2><ul class="hist">' + d.history.map(function (x) {
@@ -548,7 +592,8 @@
     var named = E.tasks.filter(function (t) { return t.name || KPI_calc(t.s); });
     set('tCount', named.length);
     set('tQty', fmt(named.reduce(function (s, t) { return s + (Number(t.qty) || 0); }, 0)));
-    set('tSelf', fmt(sumPoints('s'))); set('tMgr', fmt(sumPoints('m')));
+    set('tSelf', fmt(sumPoints('s')));
+    set('tMgr', fmt(Math.round(E.tasks.reduce(function (a, t) { var c = t.locked ? KPI_calc(t.m) : null; return a + (c ? (Number(t.qty) || 0) * c.point : 0); }, 0) * 100) / 100));
   }
   /** Tách văn bản chép từ Excel (các ô cách nhau bằng tab, ô có xuống dòng nằm trong dấu nháy kép). */
   function parseTsv(text) {
@@ -595,14 +640,14 @@
     var cc = function (t, key) { var c = KPI_calc(t[key]); return c ? [c.s, c.n, c.point] : ['', '', '']; };
     var aoa = [
       ['TT', 'Tên công việc', 'Sản phẩm', 'Số lượng sản phẩm', 'Tháng thực hiện', 'Cán bộ tự đánh giá', '', '', '', '', 'Công thức tự tính toán', '', '', 'Lãnh đạo trực tiếp quản lý chấm', '', '', '', '', 'Công thức tự tính toán', '', ''],
-      ['', '', '', '', ''].concat(fh, ['S', 'N', 'Điểm của N'], fh, ['S', 'N', 'Điểm của N'])
+      ['', '', '', '', ''].concat(fh, ['S', 'N', 'Điểm của N'], fh, ['S', 'N', 'Điểm của N'], ['Nhận xét của người đánh giá'])
     ].concat(E.tasks.map(function (t, i) {
-      return [i + 1, t.name, t.product, Number(t.qty) || 0, t.month].concat(lv(t, 's'), cc(t, 's'), E.showMgr ? lv(t, 'm') : blank5, E.showMgr ? cc(t, 'm') : ['', '', '']);
+      return [i + 1, t.name, t.product, Number(t.qty) || 0, t.month].concat(lv(t, 's'), cc(t, 's'), E.showMgr ? lv(t, 'm') : blank5, E.showMgr ? cc(t, 'm') : ['', '', ''], [t.note || '']);
     }));
     aoa.push(['', 'Tổng điểm (số lượng × điểm của N)', '', '', '', '', '', '', '', '', '', '', sumPoints('s'), '', '', '', '', '', '', '', E.showMgr ? sumPoints('m') : '']);
     var ws = XLSX.utils.aoa_to_sheet(aoa), mg = function (r1, c1, r2, c2) { return { s: { r: r1, c: c1 }, e: { r: r2, c: c2 } }; };
     ws['!merges'] = [mg(0, 0, 1, 0), mg(0, 1, 1, 1), mg(0, 2, 1, 2), mg(0, 3, 1, 3), mg(0, 4, 1, 4), mg(0, 5, 0, 9), mg(0, 10, 0, 12), mg(0, 13, 0, 17), mg(0, 18, 0, 20)];
-    ws['!cols'] = [6, 62, 13, 12, 11].concat([24, 24, 24, 24, 24, 7, 6, 10, 24, 24, 24, 24, 24, 7, 6, 10]).map(function (w) { return { wch: w }; });
+    ws['!cols'] = [6, 62, 13, 12, 11].concat([24, 24, 24, 24, 24, 7, 6, 10, 24, 24, 24, 24, 24, 7, 6, 10, 40]).map(function (w) { return { wch: w }; });
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, (d.owner.fullName || 'Phiếu').replace(/[\\\/\?\*\[\]:]/g, ' ').slice(0, 31));
     XLSX.writeFile(wb, 'KPI_' + (d.owner.fullName + '_' + d.period.name).replace(/[^\p{L}\p{N}]+/gu, '_') + '.xlsx');
@@ -942,6 +987,10 @@
     excel: function (el) { run(el, exportExcel); },
 
     taskAdd: function () { E.tasks.push(blankTask()); redrawTable(true); },
+    mgrAdd: function () { var t = blankMgrTask(); E.tasks.push(t); E.sel[t.id] = true; E.showMgr = true; redrawTable(true); },
+    scoreOne: function (el) { doScore([+el.dataset.t], 'score', el); },
+    scoreSel: function (el) { doScore(selectedRows(), 'score', el); },
+    noteSel: function (el) { doScore(selectedRows(), 'note', el); },
     taskDel: function (el) {
       var t = E.tasks[+el.dataset.t];
       if ((t.name || KPI_calc(t.s)) && !confirm('Xoá công việc số ' + (+el.dataset.t + 1) + '?')) return;
@@ -972,7 +1021,7 @@
         if (!tasks.length) return toast('Phiếu chưa có công việc nào.', true);
         for (var i = 0; i < E.tasks.length; i++) {
           var t = E.tasks[i];
-          if (tasks.indexOf(t) < 0) continue;
+          if (tasks.indexOf(t) < 0 || t.locked) continue; // việc đã được chấm (kể cả việc người phụ trách thêm) không cần kiểm tra lại
           if (!t.name.trim()) return toast('Công việc số ' + (i + 1) + ' chưa ghi tên.', true);
           if (!KPI_calc(t.s)) return toast('Công việc số ' + (i + 1) + ' chưa chọn đủ 5 tiêu chí A–E.', true);
         }
@@ -1090,6 +1139,8 @@
     if (!el.dataset) return;
     if (el.id === 'reportUnit') { reportUnit = el.value; render(); return; }
     if (el.id === 'prevSel') { loadPrev(); return; }
+    if (E && el.dataset.sel !== undefined) { E.sel[el.dataset.sel] = el.checked; return; }
+    if (E && el.id === 'selAll') { E.tasks.forEach(function (t) { E.sel[t.id] = el.checked; }); document.querySelectorAll('input[data-sel]').forEach(function (c) { c.checked = el.checked; }); return; }
     if (el.id === 'prevAll') { document.querySelectorAll('#prevList input[data-i]').forEach(function (c) { c.checked = el.checked; }); return; }
     if (!E) return;
     var ti = +el.dataset.t;

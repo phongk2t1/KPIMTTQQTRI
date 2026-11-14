@@ -116,6 +116,7 @@
     if (u.selfEval) items.push(['tudanhgia', 'Tự đánh giá']);
     if (S.hasReports) items.push(['duyet', 'Đánh giá cấp dưới']);
     if (S.hasReports || u.isAdmin) items.push(['baocao', 'KPI tổng hợp']);
+    if (S.hasReports || u.isAdmin || u.isStaff || u.isVoter) items.push(['xeploai', 'Xếp loại']);
     items.push(['tieuchi', 'Bảng tiêu chí']);
     if (u.isAdmin) items.push(['quantri', 'Quản trị']);
     items.push(['matkhau', 'Đổi mật khẩu']);
@@ -170,7 +171,10 @@
     run(btn, async function () {
       var d = await api('score', {
         periodId: S.periodId, userId: E.d.owner.id, mode: mode,
-        tasks: sent.map(function (t) { return t.isNew ? { isNew: true, name: t.name, product: t.product, qty: t.qty, month: t.month, m: t.m, note: t.note } : { id: t.id, m: t.m, note: t.note }; })
+        tasks: sent.map(function (t) { var x = t.isNew ? { isNew: true, name: t.name, product: t.product, qty: t.qty, month: t.month, m: t.m, note: t.note } : { id: t.id, m: t.m, note: t.note };
+          x.progress = t.mProgress; x.doneDate = t.mDone; x.bonus = t.mBonus; x.ot = !!t.ot; x.oq = !!t.oq; // phần người phụ trách xác nhận
+          return x;
+        })
       });
       S.ov = null; S.st = null;
       setEval(d);
@@ -205,7 +209,7 @@
     if (f) f.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
-  var TITLES = { tongquan: 'Tổng quan', tudanhgia: 'Phiếu tự đánh giá', phieu: 'Phiếu đánh giá', duyet: 'Đánh giá cấp dưới', baocao: 'KPI tổng hợp', quantri: 'Quản trị hệ thống', tieuchi: 'Bảng tiêu chí chấm điểm', matkhau: 'Đổi mật khẩu' };
+  var TITLES = { tongquan: 'Tổng quan', tudanhgia: 'Phiếu tự đánh giá', phieu: 'Phiếu đánh giá', duyet: 'Đánh giá cấp dưới', baocao: 'KPI tổng hợp', xeploai: 'Xếp loại chất lượng', quantri: 'Quản trị hệ thống', tieuchi: 'Bảng tiêu chí chấm điểm', matkhau: 'Đổi mật khẩu' };
   var renderSeq = 0;
   async function render() {
     modal.innerHTML = '';
@@ -216,9 +220,9 @@
     if (S.user.mustChange) route = 'matkhau';
     else if (allowed.indexOf(route) < 0) route = 'tongquan';
     var seq = ++renderSeq;
-    var view = shell(route, TITLES[route], ['tongquan', 'tudanhgia', 'phieu', 'duyet', 'baocao'].indexOf(route) >= 0);
+    var view = shell(route, TITLES[route], ['tongquan', 'tudanhgia', 'phieu', 'duyet', 'baocao', 'xeploai'].indexOf(route) >= 0);
     try {
-      var needPeriod = ['tongquan', 'tudanhgia', 'phieu', 'duyet', 'baocao'].indexOf(route) >= 0;
+      var needPeriod = ['tongquan', 'tudanhgia', 'phieu', 'duyet', 'baocao', 'xeploai'].indexOf(route) >= 0;
       if (needPeriod && !S.periodId) {
         view.innerHTML = '<div class="card">Chưa có kỳ đánh giá nào. ' + (S.user.isAdmin ? 'Vào <a href="#/quantri/periods">Quản trị › Kỳ đánh giá</a> để tạo.' : 'Vui lòng liên hệ quản trị viên.') + '</div>';
         return;
@@ -227,6 +231,7 @@
       if (route === 'tongquan') html = dashboardHtml((await Promise.all([overview(), stats()]))[0]);
       else if (route === 'duyet') html = reviewHtml(await overview());
       else if (route === 'baocao') html = reportHtml(await overview());
+      else if (route === 'xeploai') { RT = await api('rating', { periodId: S.periodId }); html = ratingHtml(); }
       else if (route === 'tudanhgia' || route === 'phieu') {
         var d = await api('getEvaluation', { periodId: S.periodId, userId: route === 'phieu' ? arg : '' });
         if (seq !== renderSeq) return;
@@ -234,6 +239,7 @@
         return;
       } else if (route === 'quantri') {
         ADMIN = await api('adminList');
+        if (arg === 'library') await libLoad();
         html = adminHtml(arg || 'users');
       } else if (route === 'tieuchi') html = modelHtml();
       else html = passwordHtml();
@@ -556,7 +562,7 @@
     return '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Họ tên</th><th>Đơn vị</th><th>Cấp</th><th class="num">Số việc</th><th class="num">Tự chấm</th><th class="num">Đã được chấm</th><th class="num">KPI tổng hợp</th><th>Trạng thái</th>' + (withAction ? '<th></th>' : '') + '</tr></thead><tbody>' +
       rows.map(function (r) {
         return '<tr class="click" data-act="open" data-u="' + h(r.user.id) + '"><td><b>' + h(r.user.fullName) + '</b><div class="muted small">' + h(r.user.title) + '</div></td><td>' + h(unitName(r.user.unitId)) + '</td><td>' + h(LEVEL[r.user.level]) + '</td>' +
-          '<td class="num">' + (r.taskCount || '–') + '</td><td class="num">' + fmt(r.selfTotal) + '</td><td class="num">' + fmt(r.mgrTotal) + '</td><td class="num"><b>' + fmt(r.kpi) + '</b></td><td>' + badge(r.status) + '</td>' +
+          '<td class="num">' + (r.taskCount || '–') + '</td><td class="num">' + fmt(r.selfTotal) + '</td><td class="num">' + fmt(r.mgrTotal) + '</td><td class="num"><b>' + fmt(r.kpi) + '</b></td><td>' + badge(r.status) + (r.fb ? ' <span class="badge b-amber" title="Cán bộ phản hồi không tán thành kết quả chấm">' + r.fb + ' phản hồi</span>' : '') + '</td>' +
           (withAction ? '<td class="right"><span class="btn sm primary">Đánh giá</span></td>' : '') + '</tr>';
       }).join('') + '</tbody></table></div>';
   }
@@ -596,6 +602,12 @@
       if (!t.s) t.s = [0, 0, 0, 0, 0];
       if (E.canMgr && !KPI_calc(t.m)) t.m = (KPI_calc(t.pm) ? t.pm : t.s).slice(); // điền sẵn: việc lặp lại lấy kết quả chấm kỳ trước, việc khác theo mức cán bộ tự chọn; người đánh giá đổi được
       if (E.canMgr && !t.locked) E.sel[t.id] = true;                                // mặc định chọn sẵn các việc chưa chấm
+      if (E.canMgr && !t.locked) { // điền sẵn phần xác nhận theo cán bộ kê; người đánh giá đổi được
+        if (t.mProgress == null) t.mProgress = t.progress != null ? t.progress : 100;
+        if (!t.mDone) t.mDone = t.doneDate || '';
+        if (t.mBonus == null) t.mBonus = t.bonus || 0;
+        if (t.ot == null) t.ot = !!(t.deadline && t.mDone && t.mDone < t.deadline);
+      }
     });
     E.showMgr = E.canMgr || E.tasks.some(function (t) { return KPI_calc(t.m); });
     E.note = '';
@@ -630,14 +642,15 @@
     var months = E.months.indexOf(t.month) < 0 && t.month ? E.months.concat([t.month]) : E.months;
     var name = edit ? '<textarea rows="3" data-fld="name" data-t="' + ti + '" placeholder="' + (t.isNew ? 'Tên công việc thêm cho cấp dưới' : 'Tên công việc (ghi thật rõ việc đã làm)') + '">' + h(t.name) + '</textarea>' +
       (t.isNew ? '' : '<div class="ev-add no-print"><input type="url" data-fld="link" data-t="' + ti + '" value="' + h(t.link || '') + '" placeholder="Đường dẫn minh chứng (không bắt buộc)">' +
-        (S.canUpload ? '<label class="btn sm">Tải tệp<input type="file" hidden data-upfile="' + ti + '"></label>' : '') + '</div>') :
+        '</div>') :
       '<div class="tname">' + h(t.name) + '</div>' + (t.link ? '<a class="small" href="' + h(t.link) + '" target="_blank" rel="noopener">Minh chứng</a>' : '');
     var pc = KPI_calc(t.pm), tags = (t.locked ? '<span class="badge b-green" title="Người phụ trách đã chấm, cán bộ không sửa được">🔒 Đã chấm' + (t.mDate ? ' ' + h(t.mDate.slice(0, 5)) + ' ' + h(String(t.mTime || '').slice(0, 5)) : '') + '</span>' : '') +
       (t.isNew ? '<span class="badge b-amber">Việc mới, chưa lưu</span>' : '') + (t.by ? '<span class="badge b-purple">Người phụ trách thêm</span>' : '') +
       (!edit && t.repeat ? '<span class="badge b-blue">Lặp lại</span>' : '') + (t.from ? '<span class="badge b-gray">Từ ' + h(t.from) + '</span>' : '') +
       (pc ? '<span class="badge b-purple">Kỳ trước chấm ' + pc.n + ' · ' + fmt(pc.point) + 'đ</span>' : '');
     name += (edit && !t.isNew ? '<label class="chk small no-print"><input type="checkbox" data-fld="repeat" data-t="' + ti + '"' + (t.repeat ? ' checked' : '') + '>Việc lặp lại: tự đưa sang kỳ sau</label>' : '') + (tags ? '<div class="tags">' + tags + '</div>' : '') +
-      (!mgr && t.note ? '<div class="mnote"><b>Nhận xét của người phụ trách:</b> ' + h(t.note) + '</div>' : ''); // người tự chấm thấy nhận xét ngay tại công việc
+      (!mgr && t.note ? '<div class="mnote"><b>Nhận xét của người phụ trách:</b> ' + h(t.note) + '</div>' : '') + // người tự chấm thấy nhận xét ngay tại công việc
+      extraHtml(t, ti, edit && !t.isNew);
     var cells = '<td class="center c-tt">' + (mgr ? '<label class="pick1"><input type="checkbox" data-sel="' + h(t.id) + '"' + (E.sel[t.id] ? ' checked' : '') + ' aria-label="Chọn công việc ' + (ti + 1) + '"><span>' + (ti + 1) + '</span></label>' : (ti + 1)) + '</td><td class="c-name">' + name + '</td>' +
       (edit ? '<td><select data-fld="product" data-t="' + ti + '" aria-label="Sản phẩm">' + opts(M.products.map(function (x) { return [x, x]; }), t.product) + '</select></td>' +
         '<td><input type="number" min="0.01" step="any" data-fld="qty" data-t="' + ti + '" value="' + h(t.qty) + '" aria-label="Số lượng sản phẩm"></td>' +
@@ -650,7 +663,7 @@
       cells += calcCells(t, 'm');
     }
     if (mgr) {
-      cells += '<td class="c-note">' + (mEdit ? '<textarea rows="2" data-fld="note" data-t="' + ti + '" placeholder="Nhận xét cho việc này (không bắt buộc)" aria-label="Nhận xét cho công việc ' + (ti + 1) + '">' + h(t.note || '') + '</textarea>' : (t.note ? h(t.note) : '<span class="muted">–</span>')) + '</td>' +
+      cells += '<td class="c-note">' + (mEdit ? '<textarea rows="2" data-fld="note" data-t="' + ti + '" placeholder="Nhận xét cho việc này (không bắt buộc)" aria-label="Nhận xét cho công việc ' + (ti + 1) + '">' + h(t.note || '') + '</textarea>' + confirmHtml(t, ti) : (t.note ? h(t.note) : '<span class="muted">–</span>')) + '</td>' +
         '<td class="no-print center nowrap">' + (mEdit ? '<button type="button" class="btn sm ok" data-act="scoreOne" data-t="' + ti + '">Chấm điểm</button>' +
           (fixing && t.locked ? ' <button type="button" class="btn sm" data-act="editCancel" data-t="' + ti + '">Huỷ</button>' : '') +
           (t.isNew ? ' <button type="button" class="btn sm danger" title="Bỏ việc vừa thêm" data-act="taskDel" data-t="' + ti + '">×</button>' : '')
@@ -716,6 +729,7 @@
     if (o.id === S.user.id && d.period.phase === 'chot' && !p.canEdit && ev.status !== 'da_chot' && ev.status !== 'cho_duyet') banner += '<div class="banner amber">Kỳ này đã chốt nhập' + (d.period.deadline ? ' (hạn ' + fdate(d.period.deadline) + ')' : '') + ' nên anh/chị không nhập được nữa.</div>';
     if (p.selfScore && p.canEdit) banner += '<div class="banner blue">Đồng chí thuộc cấp trưởng đơn vị nên <b>tự chấm cho mình</b>: mức A–E tự chọn chính là kết quả và được tính vào KPI ngay khi bấm <b>Lưu và chấm điểm</b>. Việc đã chấm muốn đổi thì bấm <b>Sửa</b> ở cuối dòng, chỉnh lại rồi bấm Lưu và chấm điểm.</div>';
     if (E.note) banner += '<div class="banner blue">' + h(E.note) + '</div>';
+    if (d.result) banner = '<div class="banner green">Kết quả xếp loại ' + h(d.period.name) + ': <b>' + h(d.result) + '</b></div>' + banner;
     if (p.canEdit && !d.managerName) banner += '<div class="banner amber">Anh/chị chưa được khai người phụ trách đánh giá nên chưa nộp được phiếu (vẫn lưu nháp được). Vui lòng liên hệ quản trị viên.</div>';
     var guide = p.canEdit ? '<details class="card guide no-print"' + (E.tasks.length <= 1 ? ' open' : '') + '><summary>Cách ghi phiếu' + (d.period.deadline ? ' · hạn chốt nhập <b>' + fdate(d.period.deadline) + '</b>' : '') + '</summary>' +
       '<ul><li><b>Tên công việc:</b> ' + h(HINT_NAME) + '</li><li><b>Số lượng sản phẩm:</b> ' + h(HINT_QTY) + '</li>' +
@@ -736,7 +750,7 @@
       (o.id !== S.user.id ? '<p class="no-print"><a href="#/' + (S.hasReports ? 'duyet' : 'baocao') + '">‹ Quay lại danh sách</a></p>' : '') +
       '<div class="card no-print"><div class="actions" style="justify-content:space-between"><div><h2>' + h(o.fullName) + '</h2><div class="muted">' + h(o.title) + ' · ' + h(unitName(o.unitId)) + '</div><div class="muted small">Người phụ trách đánh giá: ' + (d.managerName ? '<b>' + h(d.managerName) + '</b>' : 'chưa khai') + '</div></div>' + badge(ev.status) + '</div></div>' +
       banner + guide +
-      '<div class="card"><div id="taskBox">' + tableHtml() + '</div></div>' + teamHtml() +
+      '<div class="card">' + (p.canEdit ? libBoxHtml() : '') + '<div id="taskBox">' + tableHtml() + '</div></div>' + teamHtml() +
       '<div class="card"><h2>Nhận xét</h2>' +
       (commentBox('selfComment', 'Tự nhận xét của cán bộ', ev.selfComment, p.canEdit, 'Không bắt buộc') +
         commentBox('mgrComment', 'Nhận xét chung của người phụ trách', ev.mgrComment, false, '') || '<div class="muted">Chưa có nhận xét.</div>') +
@@ -762,7 +776,7 @@
     set('tCount', named.length);
     set('tQty', fmt(named.reduce(function (s, t) { return s + (Number(t.qty) || 0); }, 0)));
     set('tSelf', fmt(sumPoints('s')));
-    set('tMgr', fmt(Math.round(E.tasks.reduce(function (a, t) { var c = t.locked ? KPI_calc(t.m) : null; return a + (c ? (Number(t.qty) || 0) * c.point : 0); }, 0) * 100) / 100));
+    set('tMgr', fmt(Math.round(E.tasks.reduce(function (a, t) { var c = t.locked ? KPI_calc(t.m) : null; return a + (c ? (Number(t.qty) || 0) * c.point * (1 + (Number(t.mBonus) || 0) / 100) : 0); }, 0) * 100) / 100));
   }
   /** Tách văn bản chép từ Excel (các ô cách nhau bằng tab, ô có xuống dòng nằm trong dấu nháy kép). */
   function parseTsv(text) {
@@ -947,7 +961,9 @@
           ['phone', 'Số điện thoại', 'text'], ['email', 'Email', 'text'],
           ['level', 'Cấp trong cây phụ trách', 'select', Object.keys(LEVEL).map(function (k) { return [k, LEVEL[k]]; })],
           ['managerId', 'Người phụ trách đánh giá (cấp phó trở lên)', 'select', managerOpts(cur.id)],
-          ['selfEval', 'Tự kê công việc và tự đánh giá (trưởng đơn vị, thủ trưởng thường không chọn)', 'check'], ['isAdmin', 'Có quyền quản trị hệ thống', 'check'], ['active', 'Đang hoạt động', 'check']];
+          ['selfEval', 'Tự kê công việc và tự đánh giá (trưởng đơn vị, thủ trưởng thường không chọn)', 'check'], ['isAdmin', 'Có quyền quản trị hệ thống', 'check'],
+          ['isStaff', 'Tham mưu tổng hợp xếp loại (thấy bảng xếp loại toàn cơ quan, nhập tiêu chí chung, trình biểu quyết, chốt)', 'check'],
+          ['isVoter', 'Thành viên tập thể lãnh đạo biểu quyết xếp loại', 'check'], ['active', 'Đang hoạt động', 'check']];
       },
       wire: function (form) { // đổi cấp thì đặt lại mặc định "tự kê"
         form.elements.level.addEventListener('change', function () { form.elements.selfEval.checked = KPI_LEVELS[form.elements.level.value].selfEval; });
@@ -1012,16 +1028,21 @@
       (loose.length ? '<div class="card"><h2>Chưa có người phụ trách (' + loose.length + ')</h2><p class="muted small">Những người tự kê công việc trong danh sách này chưa nộp được phiếu cho đến khi được khai người phụ trách. Người đứng đầu cơ quan không cần khai.</p><ul class="tree">' + loose.map(node).join('') + '</ul></div>' : '');
   }
   function adminHtml(tab) {
-    var tabNames = { users: 'Người dùng', units: 'Đơn vị', tree: 'Cây phụ trách', periods: 'Kỳ đánh giá', config: 'Xếp loại, cơ quan' };
+    var tabNames = { users: 'Người dùng', units: 'Đơn vị', tree: 'Cây phụ trách', periods: 'Kỳ đánh giá', library: 'Kho công việc mẫu', config: 'Xếp loại, cơ quan' };
     if (!tabNames[tab]) tab = 'users';
     var tabs = '<div class="tabs">' + Object.keys(tabNames).map(function (k) { return '<button data-act="tab" data-t="' + k + '" class="' + (k === tab ? 'on' : '') + '">' + tabNames[k] + '</button>'; }).join('') + '</div>';
     if (tab === 'tree') return tabs + treeHtml();
+    if (tab === 'library') return tabs + libAdminHtml();
     if (tab === 'config') {
       var rs = (S.config.ratings || []).concat([{ name: '', min: '' }]);
       return tabs + '<div class="card" style="max-width:640px"><label class="f"><span>Tên cơ quan (hiện trên phiếu, báo cáo)</span><input type="text" id="cfgOrg" value="' + h(S.config.orgName) + '"></label>' +
         '<h3 style="margin:8px 0">Mức xếp loại theo điểm phiếu cá nhân (không bắt buộc)</h3><table class="tbl"><thead><tr><th>Tên mức xếp loại</th><th class="num">Từ điểm</th></tr></thead><tbody>' +
         rs.map(function (r) { return '<tr data-rating><td><input type="text" value="' + h(r.name) + '" placeholder="Thêm mức mới (không bắt buộc)"></td><td class="num"><input type="number" min="0" step="any" value="' + h(r.min) + '"></td></tr>'; }).join('') +
-        '</tbody></table><p class="muted small">Để trống nếu cơ quan chưa quy định xếp loại. Nếu đặt: mức thấp nhất luôn tính từ 0 điểm; xoá tên để bỏ một mức.</p><button class="btn primary" data-act="saveConfig">Lưu cấu hình</button></div>';
+        '</tbody></table><p class="muted small">Để trống nếu cơ quan chưa quy định xếp loại. Nếu đặt: mức thấp nhất luôn tính từ 0 điểm; xoá tên để bỏ một mức.</p>' +
+        '<h3 style="margin:16px 0 8px">Ngưỡng xếp loại chất lượng theo kỳ</h3>' + [['quota', 'Số người xuất sắc không quá bao nhiêu % số người từ “Hoàn thành tốt” trở lên'], ['minScore', 'Tổng điểm (thang 100) tối thiểu để xét xuất sắc'],
+          ['minOver', 'Tỷ lệ % nhiệm vụ vượt mức tối thiểu để xét xuất sắc'], ['common', 'Điểm tối đa của nhóm tiêu chí chung (phần còn lại của thang 100 là kết quả nhiệm vụ)'], ['maxBonus', 'Điểm thưởng tối đa của một công việc (% điểm công việc đó)']]
+          .map(function (x) { return '<label class="f"><span>' + x[1] + '</span><input type="number" min="0" max="100" step="any" data-rule="' + x[0] + '" value="' + h((S.config.rule || {})[x[0]]) + '"></label>'; }).join('') +
+        '<button class="btn primary" data-act="saveConfig">Lưu cấu hình</button></div>';
     }
     var def = ADM[tab], list = def.list();
     return tabs + '<div class="card"><div class="actions" style="justify-content:flex-end;margin-bottom:12px">' +
@@ -1302,12 +1323,427 @@
         if (ins[0].value.trim()) ratings.push({ name: ins[0].value.trim(), min: Number(ins[1].value) || 0 });
       });
       run(el, async function () {
-        S.config = await api('adminSaveConfig', { config: { orgName: $('#cfgOrg').value, ratings: ratings } });
+        var rl = {};
+        document.querySelectorAll('[data-rule]').forEach(function (x) { rl[x.dataset.rule] = x.value; });
+        S.config = await api('adminSaveConfig', { config: { orgName: $('#cfgOrg').value, ratings: ratings, rule: rl } });
         await render();
         toast('Đã lưu cấu hình.');
       });
     }
   };
+
+  /* =====================================================================
+   * BỔ SUNG: tiến độ – vượt mức – điểm thưởng, minh chứng trên Drive, phản hồi,
+   * kho công việc mẫu, xếp loại (tham mưu tổng hợp, biểu quyết)
+   * ===================================================================== */
+  var RATE_SHORT = { xs: 'Xuất sắc', tot: 'Tốt', ht: 'Hoàn thành', kht: 'Không hoàn thành' };
+  var RATE_BADGE = { xs: 'b-green', tot: 'b-blue', ht: 'b-gray', kht: 'b-amber' };
+  function fsize(n) { n = Number(n) || 0; return n >= 1048576 ? fmt(n / 1048576) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+  function evName(x) { return x.id + '_' + x.name; }
+  function evLinks(t) {
+    return (t.ev || []).map(function (x) { return '<a href="#" class="evl" data-act="evView" data-id="' + h(x.id) + '" title="Mở minh chứng">📎 ' + h(evName(x)) + '</a>'; }).join('');
+  }
+  /** Phần bổ sung dưới tên công việc: hạn, ngày hoàn thành, tiến độ, điểm thưởng, minh chứng, kết quả xác nhận, phản hồi. */
+  function extraHtml(t, ti, edit) {
+    var d = E.d, out = '', maxB = (d.rule || {}).maxBonus || 5, mine = d.owner.id === S.user.id;
+    if (edit) {
+      out += '<div class="tx no-print"><label>Hạn hoàn thành<input type="date" data-fld="deadline" data-t="' + ti + '" value="' + h(t.deadline || '') + '"></label>' +
+        '<label>Ngày hoàn thành<input type="date" data-fld="doneDate" data-t="' + ti + '" value="' + h(t.doneDate || '') + '"></label>' +
+        '<label>Tiến độ (%)<input type="number" min="0" max="100" step="1" data-fld="progress" data-t="' + ti + '" value="' + h(t.progress == null ? '' : t.progress) + '" placeholder="100"></label>' +
+        '<label>Điểm thưởng đề xuất (%)<input type="number" min="0" max="' + maxB + '" step="0.5" data-fld="bonus" data-t="' + ti + '" value="' + h(t.bonus || '') + '" placeholder="0"></label>' +
+        (d.canUpload ? '<button type="button" class="btn sm" data-act="evOpen" data-t="' + ti + '">📎 Minh chứng (' + (t.ev || []).length + '/' + KPI_MAX_EVIDENCE + ')</button>' : '') + '</div>';
+    }
+    var chips = '';
+    if (!edit) {
+      if (t.deadline) chips += '<span class="badge b-gray">Hạn ' + h(fdate(t.deadline)) + '</span>';
+      if (t.doneDate) chips += '<span class="badge b-gray">Xong ' + h(fdate(t.doneDate)) + '</span>';
+      if (t.progress != null && t.progress !== '') chips += '<span class="badge b-gray">Tiến độ ' + h(t.progress) + '%</span>';
+      if (Number(t.bonus)) chips += '<span class="badge b-gray">Đề xuất thưởng ' + fmt(t.bonus) + '%</span>';
+    }
+    if (t.locked && KPI_calc(t.m)) {
+      if (t.mProgress != null && Number(t.mProgress) < 100) chips += '<span class="badge b-amber">Xác nhận hoàn thành ' + h(t.mProgress) + '%</span>';
+      if (t.ot && t.oq) chips += '<span class="badge b-green">★ Vượt mức</span>';
+      else if (t.ot) chips += '<span class="badge b-blue">Vượt tiến độ</span>';
+      else if (t.oq) chips += '<span class="badge b-blue">Vượt chất lượng</span>';
+      if (Number(t.mBonus)) chips += '<span class="badge b-green">Thưởng +' + fmt(t.mBonus) + '%</span>';
+    }
+    if (chips) out += '<div class="tags">' + chips + '</div>';
+    if ((t.ev || []).length) out += '<div class="evs">' + evLinks(t) + '</div>';
+    if (t.fb) out += '<div class="mnote fb"><b>Phản hồi của cán bộ' + (t.fbDone ? ' (đã được xem xét)' : ' (chờ người phụ trách xem xét)') + ':</b> ' + h(t.fb) + '</div>';
+    if (mine && t.locked && t.mBy && t.mBy !== S.user.id && d.period.phase !== 'khoa') out += '<div class="no-print" style="margin-top:6px"><button type="button" class="btn sm" data-act="fbOpen" data-t="' + ti + '">' + (t.fb ? 'Sửa phản hồi' : 'Phản hồi không tán thành') + '</button></div>';
+    return out;
+  }
+  /** Ô người phụ trách xác nhận khi chấm một việc. */
+  function confirmHtml(t, ti) {
+    var maxB = (E.d.rule || {}).maxBonus || 5;
+    return '<div class="tx mg"><label>Tiến độ xác nhận (%)<input type="number" min="0" max="100" step="1" data-fld="mProgress" data-t="' + ti + '" value="' + h(t.mProgress == null ? 100 : t.mProgress) + '"></label>' +
+      '<label>Ngày hoàn thành<input type="date" data-fld="mDone" data-t="' + ti + '" value="' + h(t.mDone || '') + '"></label>' +
+      '<label>Điểm thưởng (%)<input type="number" min="0" max="' + maxB + '" step="0.5" data-fld="mBonus" data-t="' + ti + '" value="' + h(t.mBonus || 0) + '"></label>' +
+      '<label class="ck"><input type="checkbox" data-fld="ot" data-t="' + ti + '"' + (t.ot ? ' checked' : '') + '>Vượt tiến độ</label>' +
+      '<label class="ck"><input type="checkbox" data-fld="oq" data-t="' + ti + '"' + (t.oq ? ' checked' : '') + '>Vượt chất lượng</label></div>';
+  }
+
+  /* ---------- Minh chứng ---------- */
+  function evModal(ti) {
+    var t = E.tasks[ti], d = E.d, list = t.ev || [], can = d.perms.canEdit && d.owner.id === S.user.id && (!t.locked || d.perms.selfScore);
+    modal.innerHTML = '<div class="dlg" style="max-width:640px"><h2>Minh chứng của công việc số ' + (ti + 1) + '</h2><p class="small">' + h(t.name || '(chưa ghi tên công việc)') + '</p>' +
+      '<div class="tbl-wrap"><table class="tbl"><tbody>' + (list.map(function (x) {
+        return '<tr><td>📎 <b>' + h(x.id) + '</b>_' + h(x.name) + '<div class="muted small">' + fsize(x.size) + '</div></td><td class="right nowrap"><button class="btn sm" data-act="evView" data-id="' + h(x.id) + '">Xem</button>' +
+          (can ? ' <button class="btn sm danger" data-act="evDel" data-id="' + h(x.id) + '" data-t="' + ti + '">Xoá</button>' : '') + '</td></tr>';
+      }).join('') || '<tr><td class="muted">Chưa có minh chứng nào.</td></tr>') + '</tbody></table></div>' +
+      (can && list.length < KPI_MAX_EVIDENCE ? '<label class="f" style="margin-top:12px"><span>Chọn tệp để tải lên (tối đa 10 MB)</span><input type="file" id="evFile"></label>' : '') +
+      '<p class="muted small">Tệp được lưu trên Google Drive của cơ quan tại <b>KPIQTRI / ' + h(d.owner.id) + ' / ' + h(d.period.name.replace(/[\\\/]/g, '-')) + '</b>, tên tệp có mã minh chứng ở đầu. Mỗi công việc tối đa ' + KPI_MAX_EVIDENCE + ' minh chứng. Chỉ anh/chị, những người phụ trách phía trên và quản trị xem được.</p>' +
+      '<div class="actions"><button class="btn" data-act="closeModal">Đóng</button>' + (can && list.length < KPI_MAX_EVIDENCE ? '<button class="btn primary" data-act="evUpload" data-t="' + ti + '">Tải lên</button>' : '') + '</div></div>';
+  }
+  function readFile(file) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(String(r.result).split(',')[1] || ''); };
+      r.onerror = function () { reject(new Error('Không đọc được tệp.')); };
+      r.readAsDataURL(file);
+    });
+  }
+  function b64Blob(data, mime) {
+    var bin = atob(data), n = bin.length, a = new Uint8Array(n);
+    for (var i = 0; i < n; i++) a[i] = bin.charCodeAt(i);
+    return new Blob([a], { type: mime || 'application/octet-stream' });
+  }
+
+  /* ---------- Tìm và thêm việc từ kho công việc mẫu (trên phiếu tự đánh giá) ---------- */
+  var LIBQ = { items: null, loading: false, sel: {} };
+  function libBoxHtml() {
+    return '<div class="lib no-print"><div class="lib-top"><label for="libQ"><b>Thêm việc từ kho công việc mẫu</b></label>' +
+      '<input type="search" id="libQ" placeholder="Gõ mã công việc (ví dụ CV00012) hoặc một phần tên công việc" autocomplete="off">' +
+      '<label class="ck"><input type="checkbox" id="libUnit">Tìm cả kho của người cùng đơn vị</label><button type="button" class="btn sm" data-act="libShow">Xem cả kho</button></div><div id="libList"></div></div>';
+  }
+  function plain(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd'); }
+  function libMatches() {
+    var q = plain(($('#libQ') || {}).value).trim(), unit = ($('#libUnit') || {}).checked, words = q.split(/\s+/).filter(Boolean);
+    return (LIBQ.items || []).filter(function (x) {
+      if (!unit && x.userId !== S.user.id) return false;
+      var hay = plain(x.id + ' ' + x.name + ' ' + x.product);
+      return words.every(function (w) { return hay.indexOf(w) >= 0; });
+    });
+  }
+  function libRender(force) {
+    var box = $('#libList');
+    if (!box) return;
+    var q = ($('#libQ') || {}).value || '';
+    if (!q.trim() && !force && !LIBQ.open) { box.innerHTML = ''; return; }
+    if (!LIBQ.items) {
+      box.innerHTML = '<div class="muted small" style="padding:8px 0">Đang tải kho công việc mẫu…</div>';
+      if (!LIBQ.loading) {
+        LIBQ.loading = true;
+        api('libraryFind').then(function (r) { LIBQ.items = r.items; LIBQ.loading = false; libRender(force); }, function (e) { LIBQ.loading = false; box.innerHTML = '<div class="muted small">' + h(e.message) + '</div>'; });
+      }
+      return;
+    }
+    var all = libMatches(), list = all.slice(0, 60), have = {};
+    E.tasks.forEach(function (t) { have[plain(t.name) + '|' + t.product] = true; });
+    if (!all.length) { box.innerHTML = '<div class="muted small" style="padding:8px 0">' + (LIBQ.items.length ? 'Không thấy việc mẫu nào khớp.' : 'Kho công việc mẫu của anh/chị chưa có việc nào. Quản trị viên nhập kho ở mục Quản trị › Kho công việc mẫu.') + '</div>'; return; }
+    box.innerHTML = '<div class="pick">' + list.map(function (x) {
+      var c = KPI_calc(x.s), dup = have[plain(x.name) + '|' + x.product];
+      return '<label><input type="checkbox" data-lib="' + h(x.id) + '"' + (LIBQ.sel[x.id] ? ' checked' : '') + '><span><b>' + h(x.id) + '</b> · ' + h(x.name) +
+        '<br><span class="muted small">' + h(x.product) + ' · SL ' + fmt(x.qty) + (c ? ' · mức ' + x.s.join('-') + ' → ' + c.n + ' (' + fmt(c.point) + 'đ)' : ' · chưa có mức A–E') +
+        (x.userId !== S.user.id ? ' · kho của ' + h(x.ownerName) : '') + (dup ? ' · <b>đã có trong phiếu</b>' : '') + '</span></span></label>';
+    }).join('') + '</div><div class="actions" style="margin-top:8px"><button type="button" class="btn primary" data-act="libAdd">Thêm các việc đã tích vào phiếu</button>' +
+      '<button type="button" class="btn" data-act="libAll">Tích tất cả việc đang thấy</button><button type="button" class="btn" data-act="libHide">Đóng danh sách</button>' +
+      '<span class="muted small">Thấy ' + list.length + (all.length > list.length ? ' trong ' + all.length + ' việc khớp, gõ thêm để thu hẹp' : ' việc') + '</span></div>';
+  }
+
+  /* ---------- Quản trị kho công việc mẫu ---------- */
+  var LIB = { unit: '', user: '', items: [], counts: {} };
+  async function libLoad() {
+    LIB.counts = (await api('adminLibraryList', {})).counts;
+    LIB.items = LIB.user ? (await api('adminLibraryList', { userId: LIB.user })).items : [];
+  }
+  function libUsers() { return ADMIN.users.filter(function (u) { return u.unitId === LIB.unit; }).sort(function (a, b) { return KPI_LEVELS[a.level].rank - KPI_LEVELS[b.level].rank || a.fullName.localeCompare(b.fullName, 'vi'); }); }
+  function libAdminHtml() {
+    var users = LIB.unit ? libUsers() : [], who = ADMIN.users.filter(function (u) { return u.id === LIB.user; })[0], total = 0;
+    Object.keys(LIB.counts).forEach(function (k) { total += LIB.counts[k]; });
+    var html = '<div class="card"><h2>Kho công việc mẫu <span class="muted small" style="font-weight:400">· ' + total + ' việc mẫu của ' + Object.keys(LIB.counts).length + ' vị trí</span></h2>' +
+      '<div class="grid cols-2"><label class="f"><span>1. Chọn đơn vị</span><select id="lbUnit"><option value="">– chọn đơn vị –</option>' + opts(unitOpts(), LIB.unit) + '</select></label>' +
+      '<label class="f"><span>2. Chọn cá nhân trong đơn vị</span><select id="lbUser"' + (LIB.unit ? '' : ' disabled') + '><option value="">– chọn cá nhân –</option>' +
+      opts(users.map(function (u) { return [u.id, u.fullName + ' – ' + (u.title || LEVEL[u.level]) + ' (' + (LIB.counts[u.id] || 0) + ' việc mẫu)']; }), LIB.user) + '</select></label></div>';
+    if (!who) return html + '<p class="muted">Chọn đơn vị rồi chọn cá nhân để xem, thêm, sửa kho công việc mẫu của vị trí đó. Mỗi việc mẫu gắn với số CCCD của vị trí; cán bộ tìm theo mã hoặc tên rồi thêm vào phiếu tự đánh giá, kèm sẵn mức A–E.</p></div>';
+    html += '<div class="actions" style="justify-content:space-between;margin:4px 0 12px"><div><b>' + h(who.fullName) + '</b> <span class="muted">· CCCD ' + h(who.id) + ' · ' + LIB.items.length + ' việc mẫu</span></div><div class="actions">' +
+      '<button class="btn" data-act="lbImportOpen">Đẩy lên kho bằng Excel</button><button class="btn" data-act="lbExcel">Xuất ra Excel</button><button class="btn primary" data-act="lbEdit" data-id="">Thêm việc mẫu</button></div></div>' +
+      '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Mã công việc</th><th class="num">TT</th><th>Tên công việc</th><th>Sản phẩm</th><th class="num">Số lượng</th>' +
+      M.factors.map(function (f) { return '<th class="center" title="' + h(f.name) + '">' + f.key + '</th>'; }).join('') + '<th class="num">S</th><th>N</th><th class="num">Điểm</th><th></th></tr></thead><tbody>' +
+      (LIB.items.map(function (x, i) {
+        var c = KPI_calc(x.s);
+        return '<tr><td class="nowrap"><b>' + h(x.id) + '</b></td><td class="num">' + (i + 1) + '</td><td>' + h(x.name) + '</td><td>' + h(x.product) + '</td><td class="num">' + fmt(x.qty) + '</td>' +
+          x.s.map(function (v, k) { return '<td class="center" title="' + (v ? h(M.factors[k].levels[v - 1][0]) : 'Chưa chọn') + '">' + (v || '<span class="muted">–</span>') + '</td>'; }).join('') +
+          '<td class="num">' + (c ? fmt(c.s) : '') + '</td><td>' + (c ? '<span class="n n' + c.n.slice(1) + '">' + c.n + '</span>' : '') + '</td><td class="num"><b>' + (c ? fmt(c.point) : '') + '</b></td>' +
+          '<td class="right nowrap"><button class="btn sm" data-act="lbEdit" data-id="' + h(x.id) + '">Sửa</button> <button class="btn sm danger" data-act="lbDel" data-id="' + h(x.id) + '">Xoá</button></td></tr>';
+      }).join('') || '<tr><td colspan="14" class="muted center">Vị trí này chưa có việc mẫu nào.</td></tr>') + '</tbody></table></div></div>';
+    return html;
+  }
+  function libRedraw() { $('#view').innerHTML = adminHtml('library'); }
+  /** Chuyển các dòng của một sheet theo mẫu "Văn phòng" (TT, Tên công việc, Sản phẩm, Số lượng, Tháng, A, B, C, D, E) thành việc mẫu; việc trùng tên và sản phẩm chỉ giữ một, ưu tiên dòng đã đủ mức A–E. */
+  function libFromRows(rows) {
+    var map = {}, order = [];
+    rows.forEach(function (r) {
+      r = (r || []).map(function (x) { return String(x == null ? '' : x).trim(); });
+      if (!r.length || /^(tt|stt)$/i.test(r[0]) || /^tên công việc/i.test(r[0]) || /^tên công việc/i.test(r[1] || '') || /^[A-E] - /.test(r[5] || '')) return;
+      if (r.length > 1 && (/^\d+([.,]0+)?$/.test(r[0]) || r[0] === '')) r = r.slice(1);
+      var name = (r[0] || '').replace(/\s*\n\s*/g, ' ').trim();
+      if (!name) return;
+      var q = Number(String(r[2] || '').replace(',', '.')), s = [0, 0, 0, 0, 0];
+      for (var i = 0; i < 5; i++) s[i] = levelOf(i, r[4 + i]);
+      var it = { name: name, product: M.products.indexOf(r[1]) >= 0 ? r[1] : 'Khác', qty: q > 0 ? q : 1, month: /^T\d{1,2}\/\d{4}$/.test(r[3] || '') ? r[3] : '', s: s };
+      var key = plain(name) + '|' + it.product;
+      if (!map[key]) { map[key] = it; order.push(key); }
+      else if (!KPI_calc(map[key].s) && KPI_calc(s)) map[key] = it;
+    });
+    return order.map(function (k) { return map[k]; });
+  }
+  var LBX = null; // tệp Excel đang chọn để đẩy lên kho
+  function lbImportBody() {
+    if (!LBX) return '<p class="muted small">Chưa chọn tệp.</p>';
+    var items = LBX.sheets[LBX.sheet] || [], miss = items.filter(function (x) { return !KPI_calc(x.s); }).length;
+    return '<label class="f"><span>Sheet chứa công việc của vị trí này</span><select id="lbSheet">' + opts(Object.keys(LBX.sheets).map(function (n) { return [n, n + ' (' + LBX.sheets[n].length + ' việc)']; }), LBX.sheet) + '</select></label>' +
+      '<p class="small">Nhận ra <b>' + items.length + '</b> việc khác nhau' + (miss ? ', trong đó ' + miss + ' việc chưa đủ mức A–E (vẫn đưa vào kho, cán bộ tự chọn mức khi dùng)' : '') + '.</p>' +
+      '<div class="pick" style="max-height:30vh">' + items.slice(0, 200).map(function (x) { var c = KPI_calc(x.s); return '<label style="cursor:default"><span>' + h(x.name) + '<br><span class="muted small">' + h(x.product) + ' · SL ' + fmt(x.qty) + (c ? ' · ' + c.n : ' · chưa có mức') + '</span></span></label>'; }).join('') + '</div>' +
+      '<label class="chk" style="margin-top:12px"><input type="checkbox" id="lbReplace">Thay toàn bộ kho hiện có của vị trí này (không tích: chỉ thêm việc chưa có)</label>';
+  }
+
+  /* ---------- Xếp loại ---------- */
+  var RT = null;
+  function rateSel(kind, r, cur) {
+    return '<select data-rk="' + kind + '" data-u="' + h(r.user.id) + '"><option value="">–</option>' + opts(Object.keys(RATE_SHORT).map(function (k) { return [k, RATE_SHORT[k]]; }), cur) + '</select>';
+  }
+  function rateBadge(k) { return k ? '<span class="badge ' + RATE_BADGE[k] + '">' + RATE_SHORT[k] + '</span>' : '<span class="muted">–</span>'; }
+  function ratingHtml() {
+    var d = RT, rl = d.rule, open = d.phase !== 'khoa', staff = d.role.staff && open, rows = d.rows.slice().sort(function (a, b) { return b.total - a.total || a.user.fullName.localeCompare(b.user.fullName, 'vi'); });
+    var anyProp = open && rows.some(function (r) { return r.can.propose; }), anyVote = open && rows.some(function (r) { return r.can.vote; });
+    var q = d.quota, p = period();
+    var html = '<div class="card"><h2>Xếp loại chất lượng · ' + h(p.name) + '</h2><div class="stats" style="margin-bottom:12px">' +
+      '<div class="stat"><div class="v">' + rows.length + '</div><div class="l">Người trong danh sách</div></div>' +
+      '<div class="stat' + (q.proposed > q.proposedMax ? ' s-none' : '') + '"><div class="v">' + q.proposed + ' / ' + q.proposedMax + '</div><div class="l">Tham mưu đề xuất xuất sắc / mức tối đa</div><div class="x">không quá ' + rl.quota + '% của ' + q.proposedBase + ' người từ “Tốt” trở lên</div></div>' +
+      '<div class="stat s-done"><div class="v">' + q.decided + ' / ' + q.decidedMax + '</div><div class="l">Đã chốt xuất sắc / mức tối đa</div><div class="x">' + q.decidedBase + ' người đã chốt từ “Tốt” trở lên</div></div>' +
+      '<div class="stat"><div class="v">' + d.voters + '</div><div class="l">Thành viên biểu quyết</div><div class="x">' + (d.voters ? 'quản trị khai ở Quản trị › Người dùng' : 'chưa khai: chốt theo đề xuất của tham mưu') + '</div></div></div>' +
+      '<p class="muted small" style="margin:0">Quy trình: lãnh đạo trực tiếp đề xuất → bộ phận tham mưu tổng hợp, nhập điểm tiêu chí chung và trình → tập thể lãnh đạo biểu quyết → chốt kết quả. ' +
+      'Tổng điểm (thang 100) = tiêu chí chung (tối đa ' + rl.common + ') + kết quả nhiệm vụ (tối đa ' + (100 - rl.common) + ', theo tiến độ được xác nhận của các việc đã chấm). ' +
+      'Điều kiện xét xuất sắc: tổng điểm từ ' + rl.minScore + ', hoàn thành 100% nhiệm vụ, ít nhất ' + rl.minOver + '% nhiệm vụ vượt mức cả tiến độ lẫn chất lượng.</p></div>';
+    if (!open) html += '<div class="banner gray">Kỳ đánh giá đã khoá, bảng xếp loại chỉ xem.</div>';
+    html += '<div class="card"><div class="tbl-wrap"><table class="tbl rate"><thead><tr><th>Họ tên</th><th class="num">Việc đã chấm</th><th class="num">Hoàn thành</th><th class="num">Vượt mức</th><th class="num">Điểm KPI</th>' +
+      '<th class="num">Tiêu chí chung</th><th class="num">Kết quả nhiệm vụ</th><th class="num">Tổng điểm</th><th class="center">Đủ điều kiện xuất sắc</th><th>Lãnh đạo đề xuất</th><th>Tham mưu đề xuất</th><th>Biểu quyết</th><th>Kết quả</th></tr></thead><tbody>' +
+      (rows.map(function (r) {
+        var tally = Object.keys(RATE_SHORT).filter(function (k) { return r.tally[k]; }).map(function (k) { return RATE_SHORT[k] + ': ' + r.tally[k]; }).join(', ');
+        var edit = staff && !r.result;
+        return '<tr><td><b>' + h(r.user.fullName) + '</b><div class="muted small">' + h(r.user.title || LEVEL[r.user.level]) + ' · ' + h(unitName(r.user.unitId)) + '</div></td>' +
+          '<td class="num">' + r.scored + '/' + r.tasks + '</td><td class="num">' + fmt(r.donePct) + '%</td><td class="num">' + fmt(r.overPct) + '%</td><td class="num">' + fmt(r.points) + '</td>' +
+          '<td class="num">' + (edit ? '<input type="number" min="0" max="' + rl.common + '" step="0.5" data-rk="common" data-u="' + h(r.user.id) + '" value="' + h(r.common) + '">' : fmt(r.common)) + '</td>' +
+          '<td class="num">' + fmt(r.taskScore) + '</td><td class="num"><b>' + fmt(r.total) + '</b></td>' +
+          '<td class="center">' + (r.eligible ? '<span class="badge b-green">Đủ</span>' : '<span class="badge b-gray" title="' + h(r.why) + '">Chưa</span><div class="muted small">' + h(r.why) + '</div>') + '</td>' +
+          '<td>' + (open && r.can.propose ? rateSel('mgr', r, r.mgrLevel) : rateBadge(r.mgrLevel)) + '</td>' +
+          '<td>' + (edit ? rateSel('staff', r, r.staffLevel) : rateBadge(r.staffLevel)) + (r.submitted && !r.result ? '<div class="muted small">đã trình</div>' : '') + '</td>' +
+          '<td>' + (open && r.can.vote ? rateSel('vote', r, r.myVote) : (r.myVote ? 'Tôi: ' + RATE_SHORT[r.myVote] : '')) + (r.votes ? '<div class="muted small">' + r.votes + ' phiếu' + (tally ? ' · ' + h(tally) : '') + '</div>' : (r.submitted && !r.result ? '<div class="muted small">chưa có phiếu</div>' : '')) + '</td>' +
+          '<td>' + (r.result ? '<b>' + h(KPI_RATE[r.result]) + '</b>' + (staff ? '<div><button class="btn sm" data-act="rtReopen" data-u="' + h(r.user.id) + '">Mở lại</button></div>' : '') : '<span class="muted">Chưa chốt</span>') + '</td></tr>';
+      }).join('') || '<tr><td colspan="13" class="muted center">Không có ai trong phạm vi của anh/chị.</td></tr>') + '</tbody></table></div>' +
+      '<div class="actions no-print" style="margin-top:12px">' + (anyProp ? '<button class="btn primary" data-act="rtSave" data-m="mgr">Lưu đề xuất của tôi</button>' : '') +
+      (staff ? '<button class="btn" data-act="rtSave" data-m="staff">Lưu tham mưu</button><button class="btn primary" data-act="rtSave" data-m="submit">Lưu và trình biểu quyết</button><button class="btn ok" data-act="rtSave" data-m="decide">Chốt kết quả</button>' : '') +
+      (anyVote ? '<button class="btn primary" data-act="rtSave" data-m="vote">Gửi phiếu biểu quyết</button>' : '') + '<button class="btn" data-act="rtExcel">Xuất Excel</button></div></div>';
+    return html;
+  }
+
+  Object.assign(ACT, {
+    evOpen: function (el) { evModal(+el.dataset.t); },
+    evUpload: function (el) {
+      var ti = +el.dataset.t, t = E.tasks[ti], file = ($('#evFile').files || [])[0];
+      if (!file) return toast('Chưa chọn tệp.', true);
+      if (file.size > 10 * 1024 * 1024) return toast('Tệp quá lớn (tối đa 10 MB).', true);
+      run(el, async function () {
+        toast('Đang tải tệp lên Google Drive…');
+        var r = await api('evidenceAdd', { periodId: S.periodId, taskId: t.id, name: file.name, mime: file.type, data: await readFile(file) });
+        t.ev = r.items;
+        redrawTable(); evModal(ti);
+        toast('Đã tải lên ' + file.name + '.');
+      });
+    },
+    evDel: function (el) {
+      var ti = +el.dataset.t;
+      if (!confirm('Xoá minh chứng này? Tệp trên Drive sẽ vào thùng rác.')) return;
+      run(el, async function () {
+        E.tasks[ti].ev = (await api('evidenceRemove', { id: el.dataset.id })).items;
+        redrawTable(); evModal(ti);
+        toast('Đã xoá minh chứng.');
+      });
+    },
+    evView: function (el) {
+      var w = window.open('', '_blank'); // mở sẵn cửa sổ ngay lúc bấm để trình duyệt không chặn
+      run(el.tagName === 'BUTTON' ? el : null, async function () {
+        try {
+          var r = await api('evidenceGet', { id: el.dataset.id }), url = URL.createObjectURL(b64Blob(r.data, r.mime));
+          if (w) w.location = url;
+          else { var a = document.createElement('a'); a.href = url; a.download = r.name; document.body.appendChild(a); a.click(); a.remove(); }
+        } catch (e) { if (w) w.close(); throw e; }
+      });
+    },
+    fbOpen: function (el) {
+      var ti = +el.dataset.t, t = E.tasks[ti];
+      modal.innerHTML = '<div class="dlg"><h2>Phản hồi không tán thành kết quả chấm</h2><p class="small">' + h(t.name) + '</p>' +
+        '<label class="f"><span>Nội dung phản hồi gửi người phụ trách</span><textarea id="fbText" rows="4" placeholder="Nêu rõ không tán thành điểm nào và căn cứ">' + h(t.fb || '') + '</textarea></label>' +
+        '<div class="actions"><button class="btn" data-act="closeModal">Huỷ</button><button class="btn primary" data-act="fbSend" data-t="' + ti + '">Gửi phản hồi</button></div></div>';
+      $('#fbText').focus();
+    },
+    fbSend: function (el) {
+      var t = E.tasks[+el.dataset.t], text = $('#fbText').value.trim();
+      if (!text) return toast('Chưa ghi nội dung phản hồi.', true);
+      var dirty = E.d.perms.canEdit && !confirm('Gửi phản hồi sẽ tải lại phiếu; các thay đổi chưa lưu trên phiếu sẽ mất. Tiếp tục?');
+      if (dirty) return;
+      run(el, async function () {
+        var d = await api('feedback', { periodId: S.periodId, taskId: t.id, text: text });
+        modal.innerHTML = ''; S.ov = null;
+        setEval(d);
+        toast('Đã gửi phản hồi cho người phụ trách.');
+      });
+    },
+    libShow: function () { LIBQ.open = true; libRender(true); },
+    libHide: function () { LIBQ.open = false; LIBQ.sel = {}; var q = $('#libQ'); if (q) q.value = ''; libRender(); },
+    libAll: function () { libMatches().slice(0, 60).forEach(function (x) { LIBQ.sel[x.id] = true; }); libRender(true); },
+    libAdd: function () {
+      var add = (LIBQ.items || []).filter(function (x) { return LIBQ.sel[x.id]; }).map(function (x) {
+        var t = blankTask();
+        t.name = x.name; t.product = x.product; t.qty = x.qty; t.s = x.s.slice();
+        return t;
+      });
+      if (!add.length) return toast('Chưa tích việc mẫu nào.', true);
+      E.tasks = E.tasks.filter(function (t) { return t.name || KPI_calc(t.s); }).concat(add);
+      LIBQ.sel = {};
+      redrawTable(); libRender(true);
+      toast('Đã thêm ' + add.length + ' việc từ kho vào phiếu, kèm sẵn sản phẩm, số lượng và mức A–E. Kiểm tra rồi lưu phiếu.');
+    },
+
+    lbEdit: function (el) {
+      var cur = LIB.items.filter(function (x) { return x.id === el.dataset.id; })[0] || { name: '', product: 'Công văn', qty: 1, s: [0, 0, 0, 0, 0] };
+      var val = { name: cur.name, product: cur.product, qty: cur.qty };
+      var fields = [['name', 'Tên công việc', 'textarea'], ['product', 'Sản phẩm', 'select', M.products.map(function (x) { return [x, x]; })], ['qty', 'Số lượng sản phẩm', 'number']];
+      M.factors.forEach(function (f, i) {
+        val['s' + i] = cur.s[i] || 0;
+        fields.push(['s' + i, f.key + ' – ' + f.name, 'select', [[0, '– chưa chọn –']].concat(f.levels.map(function (l, k) { return [k + 1, (k + 1) + ' · ' + l[0]]; }))]);
+      });
+      formDialog(cur.id ? 'Sửa việc mẫu ' + cur.id : 'Thêm việc mẫu', fields, val).then(async function (res) {
+        if (!res) return;
+        try {
+          res.button.disabled = true;
+          var v = res.values, item = { id: cur.id || '', name: v.name, product: v.product, qty: v.qty, month: cur.month || '', s: [0, 1, 2, 3, 4].map(function (i) { return +v['s' + i]; }) };
+          var r = await api('adminLibrarySave', { userId: LIB.user, item: item });
+          LIB.items = r.items; LIB.counts[LIB.user] = r.items.length; LIBQ.items = null;
+          modal.innerHTML = ''; libRedraw();
+          toast('Đã lưu việc mẫu ' + r.id + '.');
+        } catch (e) { res.button.disabled = false; toast(e.message, true); }
+      });
+    },
+    lbDel: function (el) {
+      if (!confirm('Xoá việc mẫu ' + el.dataset.id + ' khỏi kho?')) return;
+      run(el, async function () {
+        LIB.items = (await api('adminLibraryDelete', { id: el.dataset.id })).items; LIB.counts[LIB.user] = LIB.items.length; LIBQ.items = null;
+        libRedraw(); toast('Đã xoá.');
+      });
+    },
+    lbExcel: function (el) {
+      run(el, async function () {
+        if (!window.XLSX) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+        var who = ADMIN.users.filter(function (u) { return u.id === LIB.user; })[0], fh = M.factors.map(function (f) { return f.key + ' - ' + f.name; });
+        var aoa = [['TT', 'Tên công việc', 'Sản phẩm', 'Số lượng sản phẩm', 'Tháng thực hiện', 'Cán bộ tự đánh giá', '', '', '', '', 'Công thức tự tính toán', '', '', 'CCCD', 'Mã công việc'],
+          ['', '', '', '', ''].concat(fh, ['S', 'N', 'Điểm của N', '', ''])];
+        LIB.items.forEach(function (x, i) {
+          var c = KPI_calc(x.s);
+          aoa.push([i + 1, x.name, x.product, x.qty, x.month].concat(x.s.map(function (v, k) { return v ? M.factors[k].levels[v - 1][0] : ''; }), c ? [c.s, c.n, c.point] : ['', '', ''], [who.id, x.id]));
+        });
+        var ws = XLSX.utils.aoa_to_sheet(aoa);
+        ws['!cols'] = [{ wch: 5 }, { wch: 60 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 22 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 6 }, { wch: 6 }, { wch: 10 }, { wch: 14 }, { wch: 12 }];
+        var wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, who.fullName.replace(/[\\\/\?\*\[\]:]/g, ' ').slice(0, 31));
+        XLSX.writeFile(wb, 'KhoCongViecMau_' + who.fullName.replace(/[^\p{L}\p{N}]+/gu, '_') + '.xlsx');
+      });
+    },
+    lbImportOpen: function () {
+      LBX = null;
+      var who = ADMIN.users.filter(function (u) { return u.id === LIB.user; })[0];
+      modal.innerHTML = '<div class="dlg" style="max-width:720px"><h2>Đẩy lên kho bằng Excel · ' + h(who.fullName) + '</h2>' +
+        '<p class="small">Chọn tệp Excel theo mẫu như tệp <b>Văn phòng.xlsx</b>: mỗi vị trí một sheet, các cột TT, Tên công việc, Sản phẩm, Số lượng sản phẩm, Tháng thực hiện, A, B, C, D, E. Tệp do nút “Xuất ra Excel” tạo ra cũng dùng được.</p>' +
+        '<label class="f"><span>Tệp Excel (.xlsx)</span><input type="file" id="lbFile" accept=".xlsx,.xls"></label><div id="lbBody">' + lbImportBody() + '</div>' +
+        '<div class="actions"><button class="btn" data-act="closeModal">Huỷ</button><button class="btn primary" data-act="lbImportApply">Đẩy lên kho</button></div></div>';
+    },
+    lbImportApply: function (el) {
+      var items = LBX ? LBX.sheets[LBX.sheet] || [] : [];
+      if (!items.length) return toast('Chưa có việc nào để đẩy lên. Chọn tệp và sheet trước.', true);
+      var replace = $('#lbReplace').checked;
+      if (replace && !confirm('Thay toàn bộ ' + LIB.items.length + ' việc mẫu hiện có của vị trí này bằng ' + items.length + ' việc trong tệp?')) return;
+      run(el, async function () {
+        var r = await api('adminLibraryImport', { userId: LIB.user, items: items, replace: replace });
+        LIB.items = r.items; LIB.counts[LIB.user] = r.items.length; LIBQ.items = null;
+        modal.innerHTML = ''; libRedraw();
+        toast('Đã đưa ' + r.added + ' việc mẫu vào kho' + (r.added < items.length ? ' (bỏ qua ' + (items.length - r.added) + ' việc đã có)' : '') + '.');
+      });
+    },
+
+    rtSave: function (el) {
+      var mode = el.dataset.m, pick = function (kind) {
+        var out = {};
+        document.querySelectorAll('[data-rk="' + kind + '"]').forEach(function (x) { out[x.dataset.u] = x.value; });
+        return out;
+      };
+      var action, data = { periodId: S.periodId }, msg;
+      if (mode === 'mgr') { var m = pick('mgr'); action = 'ratingPropose'; data.items = Object.keys(m).map(function (u) { return { userId: u, level: m[u] }; }); msg = 'Đã lưu đề xuất.'; }
+      else if (mode === 'vote') { var v = pick('vote'); action = 'ratingVote'; data.items = Object.keys(v).map(function (u) { return { userId: u, level: v[u] }; }); msg = 'Đã ghi phiếu biểu quyết.'; }
+      else if (mode === 'decide') { if (!confirm('Chốt kết quả xếp loại cho những người đã trình biểu quyết?')) return; action = 'ratingDecide'; msg = 'Đã chốt kết quả.'; }
+      else {
+        var st = pick('staff'), cm = pick('common');
+        action = 'ratingStaff'; data.submit = mode === 'submit';
+        data.items = Object.keys(st).filter(function (u) { return !data.submit || st[u]; }).map(function (u) { return { userId: u, level: st[u], common: cm[u] }; });
+        if (data.submit && !data.items.length) return toast('Chưa đề xuất mức xếp loại cho ai.', true);
+        if (data.submit && !confirm('Trình tập thể biểu quyết ' + data.items.length + ' người đã có đề xuất?')) return;
+        msg = data.submit ? 'Đã trình biểu quyết ' + data.items.length + ' người.' : 'Đã lưu phần tham mưu.';
+      }
+      run(el, async function () { RT = await api(action, data); $('#view').innerHTML = ratingHtml(); toast(msg); });
+    },
+    rtReopen: function (el) {
+      if (!confirm('Mở lại kết quả đã chốt của người này để biểu quyết, chốt lại?')) return;
+      run(el, async function () { RT = await api('ratingReopen', { periodId: S.periodId, userId: el.dataset.u }); $('#view').innerHTML = ratingHtml(); toast('Đã mở lại.'); });
+    },
+    rtExcel: function (el) {
+      run(el, async function () {
+        if (!window.XLSX) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+        var p = period(), lv = function (k) { return k ? KPI_RATE[k] : ''; };
+        var aoa = [[S.config.orgName], ['BẢNG TỔNG HỢP XẾP LOẠI CHẤT LƯỢNG – ' + p.name.toUpperCase()], [],
+          ['TT', 'Họ tên', 'CCCD', 'Chức vụ', 'Đơn vị', 'Việc đã chấm', 'Tổng số việc', 'Hoàn thành (%)', 'Vượt mức (%)', 'Điểm KPI', 'Tiêu chí chung', 'Kết quả nhiệm vụ', 'Tổng điểm', 'Đủ điều kiện xuất sắc', 'Lãnh đạo đề xuất', 'Tham mưu đề xuất', 'Số phiếu biểu quyết', 'Kết quả']];
+        RT.rows.slice().sort(function (a, b) { return b.total - a.total; }).forEach(function (r, i) {
+          aoa.push([i + 1, r.user.fullName, r.user.id, r.user.title, unitName(r.user.unitId), r.scored, r.tasks, r.donePct, r.overPct, r.points == null ? '' : r.points, r.common, r.taskScore, r.total, r.eligible ? 'Đủ' : 'Chưa: ' + r.why, lv(r.mgrLevel), lv(r.staffLevel), r.votes, lv(r.result)]);
+        });
+        var wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Xếp loại');
+        XLSX.writeFile(wb, 'XepLoai_' + p.name.replace(/[^\p{L}\p{N}]+/gu, '_') + '.xlsx');
+      });
+    }
+  });
+  document.addEventListener('input', function (ev) { if (ev.target.id === 'libQ') libRender(); });
+  document.addEventListener('change', function (ev) {
+    var el = ev.target;
+    if (el.id === 'libUnit') return libRender(true);
+    if (el.dataset && el.dataset.lib !== undefined) { LIBQ.sel[el.dataset.lib] = el.checked; return; }
+    if (el.id === 'lbUnit') { LIB.unit = el.value; LIB.user = ''; LIB.items = []; return libRedraw(); }
+    if (el.id === 'lbUser') { LIB.user = el.value; LIB.items = []; libRedraw(); if (LIB.user) run(null, async function () { LIB.items = (await api('adminLibraryList', { userId: LIB.user })).items; libRedraw(); }); return; }
+    if (el.id === 'lbSheet' && LBX) { LBX.sheet = el.value; $('#lbBody').innerHTML = lbImportBody(); return; }
+    if (el.id === 'lbFile' && el.files[0]) {
+      var file = el.files[0];
+      run(null, async function () {
+        if (!window.XLSX) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+        var wb = XLSX.read(await file.arrayBuffer(), { type: 'array' }), sheets = {};
+        wb.SheetNames.forEach(function (n) { var items = libFromRows(XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '', raw: false })); if (items.length) sheets[n] = items; });
+        var names = Object.keys(sheets);
+        if (!names.length) { LBX = null; $('#lbBody').innerHTML = '<p class="muted small">Không nhận ra công việc nào trong tệp.</p>'; return; }
+        var who = ADMIN.users.filter(function (u) { return u.id === LIB.user; })[0], last = plain(who.fullName).split(' ').slice(-2);
+        var guess = names.filter(function (n) { return plain(n).indexOf(last.join(' ')) >= 0; })[0] || names.filter(function (n) { return plain(n).split(/[^a-z]+/).indexOf(last[1]) >= 0; })[0] ||
+          names.slice().sort(function (x, y) { return sheets[y].length - sheets[x].length; })[0]; // không khớp tên thì lấy sheet nhiều việc nhất
+        LBX = { sheets: sheets, sheet: guess };
+        $('#lbBody').innerHTML = lbImportBody();
+      });
+    }
+  });
 
   document.addEventListener('click', function (ev) {
     var el = ev.target.closest('[data-act]');

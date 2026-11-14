@@ -94,7 +94,46 @@ Các khối nhiều kỳ trên trang Tổng quan (lấy bằng thao tác `stats`
 - **So với kỳ trước**: năm người tăng và năm người giảm điểm nhiều nhất.
 - **Hệ thống** (chỉ quản trị): số tài khoản, số người chưa đổi mật khẩu lần đầu, số người chưa khai người phụ trách, các kỳ đang mở và sắp chốt.
 
-**Phạm vi được xem.** Mỗi người chỉ thấy chính mình và những người nằm dưới mình trong cây phụ trách (mọi cấp); hai nhánh ngang hàng không thấy nhau; quản trị thấy tất cả. Quy tắc này do máy chủ kiểm tra ở `overview`, `stats`, `getEvaluation`. Danh sách đơn vị gửi về cũng chỉ gồm đơn vị của mình, của những người mình phụ trách và các đơn vị cấp trên của chúng.
+**Phạm vi được xem.** (Riêng bảng xếp loại: người tham mưu thấy toàn cơ quan, thành viên biểu quyết thấy những người đã được trình.) Mỗi người chỉ thấy chính mình và những người nằm dưới mình trong cây phụ trách (mọi cấp); hai nhánh ngang hàng không thấy nhau; quản trị thấy tất cả. Quy tắc này do máy chủ kiểm tra ở `overview`, `stats`, `getEvaluation`. Danh sách đơn vị gửi về cũng chỉ gồm đơn vị của mình, của những người mình phụ trách và các đơn vị cấp trên của chúng.
+
+## Kho công việc mẫu (trang tính `khocongviecmau`)
+
+- Cột giống biểu Excel mẫu, thêm **CCCD của vị trí** trước cột **Mã công việc** (`CV00001`…). Mỗi việc mẫu thuộc một vị trí.
+- **Quản trị › Kho công việc mẫu**: chọn đơn vị → chọn cá nhân → xem danh sách; thêm, sửa, xoá; **Xuất ra Excel**; **Đẩy lên kho bằng Excel** theo mẫu tệp `Văn phòng.xlsx` (mỗi vị trí một sheet; việc trùng tên và sản phẩm chỉ giữ một).
+- Trên phiếu **Tự đánh giá** có sẵn ô tìm: gõ mã hoặc một phần tên công việc, tích các việc đang thấy, bấm **Thêm các việc đã tích vào phiếu**. Việc được thêm kèm sẵn sản phẩm, số lượng và mức A–E. Cán bộ tìm trong kho của vị trí mình; tích “Tìm cả kho của người cùng đơn vị” để mở rộng.
+- Nạp kho lần đầu từ trình soạn thảo Apps Script: tệp `KhoMau.gs` (biến `KPI_LIBRARY`, không đưa lên GitHub) rồi chạy `importLibrary()`.
+
+## Hạn hoàn thành, tiến độ, vượt mức, điểm thưởng
+
+- Mỗi công việc có thêm: hạn hoàn thành, ngày hoàn thành, tiến độ (%), điểm thưởng đề xuất (%). Để trống tiến độ coi như đã xong.
+- Khi chấm, người phụ trách xác nhận tiến độ, ngày hoàn thành, điểm thưởng và tích **Vượt tiến độ** (tự tích nếu xong trước hạn), **Vượt chất lượng**. Việc **vượt mức** là việc được tích cả hai.
+- Điểm thưởng tối đa 5% (sửa được trong cấu hình): điểm công việc = số lượng × điểm của N × (1 + thưởng %).
+
+## Minh chứng trên Google Drive
+
+- Mỗi công việc tối đa **3 minh chứng**, mỗi tệp tối đa 10 MB. Bấm **📎 Minh chứng** trên dòng công việc để mở cửa sổ tải lên.
+- Tệp nằm trong Drive của tài khoản triển khai: `KPIQTRI / <CCCD> / <tên kỳ> / <mã minh chứng>_<tên tệp>` (mã dạng `MC000001`). Danh sách tệp ghi ở trang tính `MinhChung`.
+- Máy chủ dùng quyền `drive.file`: chỉ thấy tệp, thư mục do chính nó tạo. Tệp **không chia sẻ công khai**; chính chủ, những người phụ trách phía trên và quản trị mở tệp qua máy chủ.
+- Sau khi nâng cấp phải chạy một lần `setupDrive()` trong Apps Script để cấp quyền và tạo thư mục gốc.
+
+## Phản hồi không tán thành
+
+Việc đã được người phụ trách chấm có nút **Phản hồi không tán thành**. Người phụ trách thấy số phản hồi ở danh sách cấp dưới và nội dung ngay tại công việc; chấm lại việc đó thì phản hồi được đánh dấu đã xem xét.
+
+## Xếp loại theo kỳ: tham mưu tổng hợp, tập thể biểu quyết (trang tính `XepLoai`)
+
+Mục **Xếp loại** trên thanh bên, theo kỳ đang chọn:
+
+1. **Lãnh đạo trực tiếp đề xuất** mức xếp loại cho người mình phụ trách.
+2. **Tham mưu tổng hợp** (người được tích “Tham mưu tổng hợp xếp loại” hoặc quản trị): thấy toàn cơ quan, nhập điểm tiêu chí chung, đề xuất mức, bấm **Lưu và trình biểu quyết**.
+3. **Tập thể biểu quyết** (người được tích “Thành viên tập thể lãnh đạo biểu quyết”): bỏ phiếu cho những người đã trình; không bỏ phiếu cho chính mình.
+4. **Chốt kết quả** theo đa số phiếu; bằng phiếu thì theo đề xuất của tham mưu. Cơ quan chưa khai thành phần biểu quyết thì chốt theo đề xuất của tham mưu.
+
+Cách tính và các kiểm tra (ngưỡng sửa ở **Quản trị › Xếp loại, cơ quan**):
+
+- Tổng điểm thang 100 = tiêu chí chung (tối đa 30, mặc định đủ) + kết quả nhiệm vụ (tối đa 70) × tỷ lệ hoàn thành. Tỷ lệ hoàn thành là bình quân tiến độ được xác nhận của các công việc, việc điểm cao tính nặng hơn; việc chưa được chấm coi như chưa hoàn thành.
+- Điều kiện xét **xuất sắc**: tổng điểm từ 90; hoàn thành 100% nhiệm vụ; ít nhất 30% nhiệm vụ vượt mức.
+- Số người xuất sắc không quá 20% số người từ “Hoàn thành tốt” trở lên (làm tròn từ 0,5; nhóm dưới 5 người được 1). Vượt thì không lưu được.
 
 ## Dữ liệu mẫu
 

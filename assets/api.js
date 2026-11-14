@@ -24,6 +24,11 @@ window.KPI_API = (function () {
         if (r) { Object.assign(r, patch); save(); }
       },
       remove: function (t, id) { db[t] = db[t].filter(function (x) { return String(x.id) !== String(id); }); save(); },
+      insertMany: function (t, rows) { rows.forEach(function (r) { db[t].push(Object.assign({}, r)); }); save(); },
+      updateMany: function (t, list) {
+        list.forEach(function (x) { var r = db[t].filter(function (y) { return String(y.id) === String(x.id); })[0]; if (r) Object.assign(r, x.patch); });
+        save();
+      },
       group: function (t, field, value) { return db[t].filter(function (x) { return String(x[field]) === String(value); }); },
       replaceGroup: function (t, field, value, rows) {
         db[t] = db[t].filter(function (x) { return String(x[field]) !== String(value); }).concat(rows.map(function (r) { return Object.assign({}, r); }));

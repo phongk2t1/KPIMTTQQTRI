@@ -531,12 +531,30 @@
     updateTotals();
     if (focusLast) { var ta = document.querySelectorAll('#taskBox textarea[data-fld="name"]'); if (ta.length) ta[ta.length - 1].focus(); }
   }
+  /** Thẻ "Kết quả KPI" trên phiếu: việc tự thực hiện + kết quả của những người do người này phụ trách. */
+  function teamHtml() {
+    var d = E.d, team = d.team || [], k = d.kpi || { own: 0, total: 0, people: 0, done: 0 }, o = d.owner;
+    if (!team.length) return '';
+    var sub = Math.round((k.total - k.own) * 100) / 100;
+    return '<div class="card"><h2>Kết quả KPI của ' + h(o.fullName) + ' · ' + h(d.period.name) + '</h2>' +
+      '<div class="stats" style="margin-bottom:14px">' +
+      '<div class="stat"><div class="v">' + (o.selfEval ? fmt(k.own) : '–') + '</div><div class="l">Việc tự thực hiện đã được công nhận</div>' + (o.selfEval && d.ev.status !== 'da_chot' ? '<div class="x">phiếu chưa chấm xong nên chưa tính</div>' : '') + '</div>' +
+      '<div class="stat"><div class="v">' + fmt(sub) + '</div><div class="l">Kết quả của ' + team.length + ' người do đồng chí phụ trách</div></div>' +
+      '<div class="stat hl"><div class="v">' + fmt(k.total) + '</div><div class="l">Tổng KPI</div><div class="x">' + k.done + '/' + k.people + ' người trong phạm vi đã được đánh giá</div></div></div>' +
+      '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Người do đồng chí phụ trách</th><th>Cấp</th><th class="num">Số việc</th><th class="num">Điểm việc tự thực hiện</th><th class="num">Kết quả tính cho ' + h(o.fullName) + '</th><th>Trạng thái phiếu</th></tr></thead><tbody>' +
+      team.map(function (r) {
+        return '<tr class="click" data-act="open" data-u="' + h(r.user.id) + '"><td><b>' + h(r.user.fullName) + '</b><div class="muted small">' + h(r.user.title) + ' · ' + h(unitName(r.user.unitId)) + '</div></td><td>' + h(LEVEL[r.user.level]) + '</td>' +
+          '<td class="num">' + (r.taskCount || '–') + '</td><td class="num">' + fmt(r.finalTotal) + '</td><td class="num"><b>' + fmt(r.kpi) + '</b>' + (r.reports ? '<div class="muted small">gồm cả ' + r.reports + ' người cấp dưới</div>' : '') + '</td><td>' + badge(r.status) + '</td></tr>';
+      }).join('') +
+      '</tbody><tfoot><tr><td colspan="4" class="right">' + (o.selfEval ? 'Việc tự thực hiện ' + fmt(k.own) + ' + kết quả cấp dưới ' + fmt(sub) + ' = ' : 'Tổng kết quả cấp dưới = ') + '</td><td class="num">' + fmt(k.total) + '</td><td></td></tr></tfoot></table></div>' +
+      '<p class="muted small" style="margin:10px 0 0">Kết quả của một người trong cây đánh giá gồm các việc tự thực hiện đã được công nhận và kết quả của những người ở cây dưới. Phiếu chưa chấm xong thì chưa được cộng. Bấm vào một dòng để mở phiếu của người đó.</p></div>';
+  }
   function evalHtml() {
     var d = E.d, p = d.perms, ev = d.ev, o = d.owner;
     if (ev.status === 'khong_ke') {
       return (o.id !== S.user.id ? '<p><a href="#/baocao">‹ Quay lại KPI tổng hợp</a></p>' : '') +
         '<div class="card"><h2>' + h(o.fullName) + '</h2><div class="muted">' + h(o.title) + ' · ' + h(unitName(o.unitId)) + ' · ' + h(LEVEL[o.level]) + '</div>' +
-        '<p>Chức danh này không tự kê công việc. KPI được tổng hợp từ kết quả của những người do đồng chí phụ trách, xem ở mục <a href="#/baocao">KPI tổng hợp</a>.</p></div>';
+        '<p>Chức danh này không tự kê công việc. Kết quả KPI là tổng kết quả của những người do đồng chí phụ trách.</p></div>' + teamHtml();
     }
     var banner = '';
     if (d.period.phase === 'khoa') banner = '<div class="banner gray">Kỳ đánh giá đã khoá, phiếu chỉ xem.</div>';
@@ -567,7 +585,7 @@
       (o.id !== S.user.id ? '<p class="no-print"><a href="#/' + (S.hasReports ? 'duyet' : 'baocao') + '">‹ Quay lại danh sách</a></p>' : '') +
       '<div class="card no-print"><div class="actions" style="justify-content:space-between"><div><h2>' + h(o.fullName) + '</h2><div class="muted">' + h(o.title) + ' · ' + h(unitName(o.unitId)) + '</div><div class="muted small">Người phụ trách đánh giá: ' + (d.managerName ? '<b>' + h(d.managerName) + '</b>' : 'chưa khai') + '</div></div>' + badge(ev.status) + '</div></div>' +
       banner + guide +
-      '<div class="card"><div id="taskBox">' + tableHtml() + '</div></div>' +
+      '<div class="card"><div id="taskBox">' + tableHtml() + '</div></div>' + teamHtml() +
       '<div class="card"><h2>Nhận xét</h2>' +
       (commentBox('selfComment', 'Tự nhận xét của cán bộ', ev.selfComment, p.canEdit, 'Không bắt buộc') +
         commentBox('mgrComment', 'Nhận xét chung của người phụ trách', ev.mgrComment, false, '') || '<div class="muted">Chưa có nhận xét.</div>') +

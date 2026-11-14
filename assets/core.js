@@ -129,6 +129,20 @@ function KPI_createCore(store, env) {
   function byOrder(a, b) { return num(a.order) - num(b.order) || str(a.name).localeCompare(str(b.name), 'vi'); }
   function rank(u) { return (KPI_LEVELS[str(u.level)] || KPI_LEVELS.canbo).rank; }
 
+  /* ---------- Giai đoạn của kỳ đánh giá ----------
+   * 'mo'   : cán bộ được nhập, người phụ trách được chấm.
+   * 'chot' : đã chốt nhập (quản trị chốt, hoặc đã qua hạn nhập): cán bộ không nhập được nữa, người phụ trách vẫn chấm.
+   * 'khoa' : khoá hẳn, không ai thay đổi được. */
+  function today() { return new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10); } // ngày theo giờ Việt Nam
+  function phaseOf(period) {
+    if (!period || period.status === 'khoa') return 'khoa';
+    if (period.status === 'chot' || (str(period.deadline) && today() > str(period.deadline))) return 'chot';
+    return 'mo';
+  }
+  function periodOut(p) {
+    return { id: str(p.id), name: str(p.name), type: str(p.type), startDate: str(p.startDate), endDate: str(p.endDate), deadline: str(p.deadline), status: str(p.status), phase: phaseOf(p) };
+  }
+
   /* ---------- Cấu hình ---------- */
   function cfg(key, def) {
     var r = find('Config', key);
@@ -218,7 +232,7 @@ function KPI_createCore(store, env) {
     var qty = num(t.qty);
     if (!(qty > 0)) qty = 1;
     var link = str(t.link).trim();
-    return {
+    var out = {
       id: cut(t.id, 40) || env.uuid(),
       name: cut(t.name, 2000),
       product: KPI_MODEL.products.indexOf(t.product) >= 0 ? t.product : 'Khác',
@@ -227,6 +241,10 @@ function KPI_createCore(store, env) {
       s: cleanLevels(t.s),
       link: /^https?:\/\/\S+$/i.test(link) ? link.slice(0, 500) : ''
     };
+    if (on(t.repeat)) out.repeat = true;                       // việc lặp lại: tự đưa sang kỳ sau
+    if (KPI_calc(cleanLevels(t.pm))) out.pm = cleanLevels(t.pm); // mức người phụ trách đã chấm ở kỳ trước
+    if (cut(t.from, 60)) out.from = cut(t.from, 60);             // tên kỳ mà việc này được chuyển sang
+    return out;
   }
   /** Điểm của phiếu = tổng (số lượng × điểm của N) của từng công việc. key: 's' tự chấm, 'm' người phụ trách chấm. */
   function sumPoints(tasks, key) {
@@ -269,12 +287,16 @@ function KPI_createCore(store, env) {
     };
   }
   function perms(me, ev, owner, period) {
-    var open = !!period && period.status === 'mo';
+    var ph = phaseOf(period), open = ph !== 'khoa', input = ph === 'mo';
     var st = ev ? str(ev.status) : 'chua_lap';
-    var self = str(me.id) === str(owner.id);
+    var self = str(me.id) === str(owner.id), mine = !self && str(owner.managerId) === str(me.id);
+    var canSelf = self && on(owner.selfEval);
     return {
-      canEdit: open && self && on(owner.selfEval) && (st === 'chua_lap' || st === 'nhap' || st === 'yeu_cau_sua'),
-      canReview: open && !self && st === 'cho_duyet' && str(owner.managerId) === str(me.id),
+      // cán bộ nhập khi kỳ còn mở nhập; riêng phiếu được người phụ trách cho đánh giá lại thì sửa được cả sau khi chốt nhập
+      canEdit: canSelf && ((input && (st === 'chua_lap' || st === 'nhap' || st === 'da_chot')) || (open && st === 'yeu_cau_sua')),
+      addOnly: canSelf && input && st === 'da_chot', // phiếu đã chấm: chỉ được bổ sung việc mới
+      canReview: open && mine && st === 'cho_duyet',
+      canRedo: open && mine && st === 'da_chot',     // người phụ trách cho cán bộ đánh giá lại
       canReopen: open && on(me.isAdmin) && st === 'da_chot'
     };
   }
@@ -333,10 +355,7 @@ function KPI_createCore(store, env) {
       user: pub(me, true),
       hasReports: !!(reportsMap()[str(me.id)] || []).length,
       units: store.all('Units').slice().sort(byOrder).map(function (u) { return { id: str(u.id), name: str(u.name), parentId: str(u.parentId), order: num(u.order) }; }),
-      periods: store.all('Periods').slice().sort(function (a, b) { return str(b.startDate).localeCompare(str(a.startDate)); })
-        .map(function (p) {
-          return { id: str(p.id), name: str(p.name), type: str(p.type), startDate: str(p.startDate), endDate: str(p.endDate), deadline: str(p.deadline), status: str(p.status) };
-        }),
+      periods: store.all('Periods').slice().sort(function (a, b) { return str(b.startDate).localeCompare(str(a.startDate)); }).map(periodOut),
       config: publicConfig(),
       canUpload: !!env.uploadFile
     };
@@ -384,11 +403,42 @@ function KPI_createCore(store, env) {
     var history = !ev ? [] : store.all('History').filter(function (x) { return str(x.evalId) === str(ev.id); })
       .sort(function (a, b) { return str(b.time).localeCompare(str(a.time)); })
       .map(function (x) { return { time: str(x.time), userName: names[str(x.userId)] || '', action: str(x.action), note: str(x.note) }; });
-    return {
-      period: { id: str(period.id), name: str(period.name), status: str(period.status), deadline: str(period.deadline), startDate: str(period.startDate), endDate: str(period.endDate) },
-      owner: pub(owner), managerName: names[str(owner.managerId)] || '', ev: evOut(ev, owner),
+    var out = {
+      period: periodOut(period), owner: pub(owner), managerName: names[str(owner.managerId)] || '', ev: evOut(ev, owner),
       perms: perms(me, ev, owner, period), history: history
     };
+    if (str(me.id) === str(owner.id) && on(owner.selfEval)) {
+      var mine = store.all('Evaluations').filter(function (e) { return str(e.userId) === str(owner.id) && num(e.taskCount) > 0; });
+      var byPeriod = {};
+      store.all('Periods').forEach(function (p) { byPeriod[str(p.id)] = p; });
+      var earlier = mine.filter(function (e) { var p = byPeriod[str(e.periodId)]; return p && str(p.id) !== str(period.id); })
+        .sort(function (a, b) { return str(byPeriod[str(b.periodId)].startDate).localeCompare(str(byPeriod[str(a.periodId)].startDate)); });
+      // các kỳ khác đã có phiếu, để chọn "lấy việc từ kỳ trước"
+      out.myPeriods = earlier.map(function (e) { var p = byPeriod[str(e.periodId)]; return { id: str(p.id), name: str(p.name), taskCount: num(e.taskCount) }; });
+      // phiếu kỳ này chưa lập: tự đưa sang các việc đã đánh dấu "lặp lại" ở kỳ gần nhất trước đó
+      if (!ev && out.perms.canEdit) {
+        var prev = earlier.filter(function (e) { return str(byPeriod[str(e.periodId)].startDate) < str(period.startDate); })[0];
+        if (prev) {
+          var carried = unpack(prev).filter(function (t) { return t.repeat; }).map(function (t) { return carryTask(t, period, str(byPeriod[str(prev.periodId)].name)); });
+          if (carried.length) out.carry = { from: str(byPeriod[str(prev.periodId)].name), tasks: carried };
+        }
+      }
+    }
+    return out;
+  };
+
+  /** Bản sao một công việc để đưa sang kỳ khác: giữ mức tự chấm, nhớ mức người phụ trách đã chấm ở kỳ gốc. */
+  function carryTask(t, period, fromName) {
+    var c = { id: env.uuid(), name: str(t.name), product: str(t.product), qty: num(t.qty) || 1, month: defaultMonth(period), s: cleanLevels(t.s), link: '', from: fromName };
+    if (t.repeat) c.repeat = true;
+    if (KPI_calc(t.m)) c.pm = cleanLevels(t.m);
+    return c;
+  }
+
+  /** Các công việc trong phiếu của chính mình ở một kỳ khác, đã chuyển thành bản sao cho kỳ đang làm. */
+  A.tasksFrom = function (me, d) {
+    var target = needPeriod(d.periodId), src = needPeriod(d.fromPeriodId);
+    return { from: str(src.name), tasks: unpack(evalOf(src.id, me.id)).map(function (t) { return carryTask(t, target, str(src.name)); }) };
   };
 
   A.saveSelf = function (me, d) {
@@ -396,13 +446,21 @@ function KPI_createCore(store, env) {
     var ev = evalOf(period.id, me.id);
     if (!on(me.selfEval)) err('Chức danh của anh/chị không tự kê công việc; KPI được tổng hợp từ cấp dưới.');
     if (!perms(me, ev, me, period).canEdit) {
-      err(period.status !== 'mo' ? 'Kỳ đánh giá đã khoá, không thể chỉnh sửa.' : 'Phiếu đang ở trạng thái không cho phép chỉnh sửa.');
+      var ph = phaseOf(period);
+      err(ph === 'khoa' ? 'Kỳ đánh giá đã khoá, không thể chỉnh sửa.' : ph === 'chot' ? 'Kỳ đã chốt nhập (hết hạn ' + str(period.deadline).split('-').reverse().join('/') + '). Chỉ sửa được khi người phụ trách cho đánh giá lại.' : 'Phiếu đã nộp, đang chờ người phụ trách chấm nên chưa sửa được.');
     }
-    var old = {}, seen = {};
-    unpack(ev).forEach(function (t) { old[t.id] = t; });
-    var tasks = (Array.isArray(d.tasks) ? d.tasks : []).slice(0, 400).map(function (t) { return cleanTask(t, period); })
-      .filter(function (t) { return t.name || t.s.some(function (v) { return v; }); });
+    var p0 = perms(me, ev, me, period);
+    var old = {}, seen = {}, oldList = unpack(ev);
+    oldList.forEach(function (t) { old[t.id] = t; });
+    if (p0.addOnly && !d.submit) err('Phiếu đã được người phụ trách chấm. Anh/chị chỉ có thể bổ sung công việc mới rồi bấm "Nộp bổ sung".');
+    // việc đã được người phụ trách chấm thì giữ nguyên, cán bộ không sửa, không xoá được
+    var locked = oldList.filter(function (t) { return t.locked; });
+    var tasks = locked.concat((Array.isArray(d.tasks) ? d.tasks : []).slice(0, 400)
+      .filter(function (t) { return !(t && old[t.id] && old[t.id].locked); })
+      .map(function (t) { return cleanTask(t, period); })
+      .filter(function (t) { return t.name || t.s.some(function (v) { return v; }); }));
     tasks.forEach(function (t, i) {
+      if (t.locked) { seen[t.id] = true; return; }
       if (seen[t.id]) t.id = env.uuid();
       seen[t.id] = true;
       if (old[t.id] && old[t.id].m) t.m = old[t.id].m; // giữ điểm người phụ trách đã chấm khi phiếu bị trả lại
@@ -435,12 +493,24 @@ function KPI_createCore(store, env) {
   /** Người phụ trách đánh giá phiếu: công nhận kết quả (decision 'approve') hoặc trả lại ('return'). */
   A.review = function (me, d) {
     var x = loadEval(me, d.evalId);
+    if (d.decision === 'redo') { // cho cán bộ đánh giá lại phiếu đã chấm
+      if (!x.p.canRedo) err('Chỉ người phụ trách trực tiếp mới cho đánh giá lại được, và kỳ phải chưa khoá.');
+      x.tasks.forEach(function (t) { delete t.locked; });
+      var re = pack(x.tasks);
+      re.status = 'yeu_cau_sua'; re.finalTotal = ''; re.rating = ''; re.updatedAt = nowIso(); re.mgrComment = cut(d.comment, 2000);
+      store.update('Evaluations', x.ev.id, re);
+      log(x.ev.id, me, 'Cho đánh giá lại', d.comment);
+      return A.getEvaluation(me, { periodId: x.period.id, userId: x.owner.id });
+    }
     if (!x.p.canReview) err('Anh/chị không phải người phụ trách đánh giá phiếu này, hoặc phiếu không ở trạng thái chờ đánh giá.');
     var comment = cut(d.comment, 2000);
     var patch = { updatedAt: nowIso(), mgrComment: comment };
     if (d.decision === 'return') {
       if (!comment) err('Vui lòng ghi rõ nội dung yêu cầu sửa.');
       patch.status = 'yeu_cau_sua';
+      x.tasks.forEach(function (t) { delete t.locked; });
+      var unlocked = pack(x.tasks);
+      Object.keys(unlocked).forEach(function (k) { patch[k] = unlocked[k]; });
       store.update('Evaluations', x.ev.id, patch);
       log(x.ev.id, me, 'Yêu cầu sửa', comment);
     } else {
@@ -449,6 +519,7 @@ function KPI_createCore(store, env) {
       x.tasks.forEach(function (t) {
         var m = cleanLevels((src[t.id] || {}).m);
         t.m = KPI_calc(m) ? m : (KPI_calc(t.m) ? t.m : t.s); // không chấm lại thì lấy theo mức đã có
+        t.locked = true;                                      // đã chấm: cán bộ không sửa được nữa
       });
       var packed = pack(x.tasks);
       Object.keys(packed).forEach(function (k) { patch[k] = packed[k]; });
@@ -534,7 +605,7 @@ function KPI_createCore(store, env) {
         id: cut(r.id, 40) || 'ky_' + env.uuid().slice(0, 8), name: cut(r.name, 200), type: ['thang', 'quy', 'nam'].indexOf(r.type) >= 0 ? r.type : 'thang',
         startDate: str(r.startDate), endDate: str(r.endDate),
         deadline: /^\d{4}-\d{2}-\d{2}$/.test(str(r.deadline)) ? str(r.deadline) : str(r.endDate),
-        status: r.status === 'khoa' ? 'khoa' : 'mo'
+        status: r.status === 'khoa' || r.status === 'chot' ? r.status : 'mo'
       };
     }
   };
@@ -692,7 +763,8 @@ function KPI_createCore(store, env) {
         var sp = samples[(k * 2 + i) % samples.length];
         var t = { id: env.uuid(), name: sp[0], product: sp[1], qty: sp[2], month: defaultMonth(p), s: sp[3].slice(), link: '' };
         if (status === 'nhap' && i === n - 1) t.s = [sp[3][0], 0, 0, 0, 0];
-        if (status === 'da_chot') { t.m = sp[3].slice(); if ((i + k) % 4 === 0 && t.m[1] > 1) t.m[1]--; }
+        if (i === 0) t.repeat = true;
+        if (status === 'da_chot') { t.m = sp[3].slice(); if ((i + k) % 4 === 0 && t.m[1] > 1) t.m[1]--; t.locked = true; }
         tasks.push(t);
       }
       var row = {};
@@ -716,6 +788,56 @@ function KPI_createCore(store, env) {
     return out;
   }
 
+  /** months: [{ month: 'T10/2026' | 'thuongxuyen', tasks: [{name, product, qty, s, m?}] }].
+   * Tạo kỳ tháng nếu chưa có, ghi đè phiếu của người đó trong kỳ. Việc "thường xuyên" vào kỳ đang mở gần nhất, dạng nháp, đánh dấu lặp lại. */
+  function importEvals(userId, months) {
+    var u = find('Users', userId) || err('Không tìm thấy người dùng ' + userId);
+    var report = [];
+    (months || []).forEach(function (mo) {
+      var period, routine = mo.month === 'thuongxuyen';
+      if (routine) {
+        period = store.all('Periods').filter(function (p) { return phaseOf(p) === 'mo'; })
+          .sort(function (a, b) { return str(b.startDate).localeCompare(str(a.startDate)); })[0];
+        if (!period) { report.push('Bỏ qua việc thường xuyên: không có kỳ nào đang mở nhập'); return; }
+        var has = evalOf(period.id, u.id);
+        if (has && num(has.taskCount) > 0) { report.push('Bỏ qua việc thường xuyên: ' + str(period.name) + ' đã có phiếu, không ghi đè'); return; }
+      } else {
+        var mm = /^T(\d{1,2})\/(\d{4})$/.exec(str(mo.month));
+        if (!mm) return;
+        var m2 = (mm[1].length < 2 ? '0' : '') + mm[1], id = 'ky_' + mm[2] + m2, last = new Date(Number(mm[2]), Number(mm[1]), 0).getDate();
+        period = find('Periods', id);
+        if (!period) {
+          store.insert('Periods', { id: id, name: 'Tháng ' + m2 + '/' + mm[2], type: 'thang', startDate: mm[2] + '-' + m2 + '-01', endDate: mm[2] + '-' + m2 + '-' + last, deadline: mm[2] + '-' + m2 + '-' + last, status: 'mo' });
+          period = find('Periods', id);
+        }
+      }
+      var tasks = (mo.tasks || []).map(function (t) {
+        var c = cleanTask(t, period);
+        if (routine) c.repeat = true;
+        var m = cleanLevels(t.m);
+        if (KPI_calc(m)) c.m = m;
+        return c;
+      });
+      var full = tasks.length && tasks.every(function (t) { return KPI_calc(t.m); });
+      if (full) tasks.forEach(function (t) { t.locked = true; });
+      var status = routine ? 'nhap' : (full ? 'da_chot' : 'cho_duyet');
+      var row = {};
+      KPI_TABLES.Evaluations.forEach(function (k) { row[k] = ''; });
+      var packed = pack(tasks);
+      Object.keys(packed).forEach(function (k) { row[k] = packed[k]; });
+      row.periodId = period.id; row.userId = u.id; row.status = status; row.taskCount = tasks.length;
+      row.selfTotal = sumPoints(tasks, 's'); row.updatedAt = nowIso();
+      if (!routine) row.submittedAt = nowIso();
+      if (full) { row.mgrTotal = row.finalTotal = sumPoints(tasks, 'm'); row.rating = ratingOf(row.finalTotal); row.reviewedAt = nowIso(); row.reviewerId = str(u.managerId); }
+      var ev = evalOf(period.id, u.id);
+      if (ev) { row.id = ev.id; store.update('Evaluations', ev.id, row); }
+      else { row.id = env.uuid(); store.insert('Evaluations', row); }
+      log(row.id, u, 'Nạp từ tệp Excel', tasks.length + ' công việc');
+      report.push(str(period.name) + ': ' + tasks.length + ' việc, ' + status + ', tự chấm ' + row.selfTotal + (full ? ', công nhận ' + row.finalTotal : ''));
+    });
+    return report;
+  }
+
   function handle(req) {
     try {
       req = req || {};
@@ -730,5 +852,5 @@ function KPI_createCore(store, env) {
     }
   }
 
-  return { handle: handle, seed: seed };
+  return { handle: handle, seed: seed, importEvals: importEvals };
 }

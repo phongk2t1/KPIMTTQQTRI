@@ -159,12 +159,71 @@ function makeEnv_() {
     },
     uuid: function () { return Utilities.getUuid(); },
     defaultPass: function () { return typeof KPI_DEFAULT_PASS !== 'undefined' ? KPI_DEFAULT_PASS : null; },
+    evidence: evidenceEnv_(),
     secret: function () {
       var s = props.getProperty('KPI_SECRET');
       if (!s) { s = Utilities.getUuid() + Utilities.getUuid(); props.setProperty('KPI_SECRET', s); }
       return s;
     }
   };
+}
+
+/* ---------- Minh chứng trên Google Drive ----------
+ * Tệp nằm trong Drive của tài khoản triển khai: KPIQTRI / <CCCD> / <tên kỳ> / <mã minh chứng>_<tên tệp>.
+ * Máy chủ chỉ có quyền với những tệp, thư mục do chính nó tạo (quyền drive.file), không đọc được tệp khác trên Drive.
+ * Tệp không chia sẻ công khai; người được xem phiếu tải nội dung qua máy chủ. */
+var KPI_DRIVE_ROOT = 'KPIQTRI';
+
+function driveFolder_(name, parentId, fresh) {
+  var props = PropertiesService.getScriptProperties(), key = 'DIR|' + (parentId || '') + '|' + name;
+  var id = fresh ? null : props.getProperty(key);
+  if (id) return id;
+  var q = "name = '" + String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and '" + (parentId || 'root') + "' in parents";
+  var found = Drive.Files.list({ q: q, fields: 'files(id)', pageSize: 1 }).files || [];
+  if (found.length) id = found[0].id;
+  else {
+    var res = { name: name, mimeType: 'application/vnd.google-apps.folder' };
+    if (parentId) res.parents = [parentId];
+    id = Drive.Files.create(res, null, { fields: 'id' }).id;
+  }
+  props.setProperty(key, id);
+  return id;
+}
+
+function evidenceEnv_() {
+  function dirOf(cccd, periodName, fresh) {
+    var root = driveFolder_(KPI_DRIVE_ROOT, null, fresh), person = driveFolder_(String(cccd), root, fresh);
+    return driveFolder_(String(periodName).replace(/[\\\/]/g, '-'), person, fresh);
+  }
+  return {
+    save: function (cccd, periodName, fileName, mime, base64) {
+      var blob = Utilities.newBlob(Utilities.base64Decode(base64), mime, fileName), f;
+      try { f = Drive.Files.create({ name: fileName, parents: [dirOf(cccd, periodName, false)] }, blob, { fields: 'id,size' }); }
+      catch (e) { f = Drive.Files.create({ name: fileName, parents: [dirOf(cccd, periodName, true)] }, blob, { fields: 'id,size' }); } // thư mục đã bị xoá tay: tạo lại
+      return { fileId: f.id, size: Number(f.size) || blob.getBytes().length };
+    },
+    read: function (fileId) {
+      var r = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fileId) + '?alt=media',
+        { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+      if (r.getResponseCode() !== 200) throw new Error('Không đọc được tệp minh chứng trên Drive (mã ' + r.getResponseCode() + ').');
+      return { mime: r.getHeaders()['Content-Type'] || 'application/octet-stream', data: Utilities.base64Encode(r.getContent()) };
+    },
+    remove: function (fileId) { Drive.Files.update({ trashed: true }, fileId); }
+  };
+}
+
+/** Chạy MỘT LẦN sau khi nâng cấp: cấp quyền Drive khi Google hỏi và tạo thư mục gốc KPIQTRI. */
+function setupDrive() {
+  var id = driveFolder_(KPI_DRIVE_ROOT, null, true);
+  Logger.log('ĐÃ SẴN SÀNG. Thư mục minh chứng: https://drive.google.com/drive/folders/' + id);
+}
+
+/** Nạp kho công việc mẫu từ tệp KhoMau.gs (biến KPI_LIBRARY). Thay toàn bộ kho của từng người có trong tệp. */
+function importLibrary() {
+  var ss = getSpreadsheet_();
+  ensureSheets_(ss);
+  var core = KPI_createCore(makeSheetStore_(ss), makeEnv_());
+  Logger.log(core.importLibrary(KPI_LIBRARY, true).join('\n'));
 }
 
 function json_(obj) {
@@ -177,7 +236,8 @@ function doGet() {
 
 /* Các thao tác chỉ đọc không cần xếp hàng chờ khoá: nhiều người đăng nhập, xem phiếu cùng lúc vẫn chạy song song.
  * Chỉ thao tác ghi mới lấy khoá để hai lượt ghi không chen nhau. */
-var KPI_READ_ACTIONS = { login: 1, bootstrap: 1, overview: 1, stats: 1, getEvaluation: 1, tasksFrom: 1, adminList: 1 };
+var KPI_READ_ACTIONS = { login: 1, bootstrap: 1, overview: 1, stats: 1, getEvaluation: 1, tasksFrom: 1, adminList: 1,
+  evidenceGet: 1, libraryFind: 1, adminLibraryList: 1, rating: 1 };
 
 function doPost(e) {
   var req;

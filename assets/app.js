@@ -846,7 +846,11 @@
       if (first) first.focus();
     });
   }
-  function showPassword(title, user, pass) {
+  function showPassword(title, user, pass, usedDefault) {
+    if (usedDefault || !pass) {
+      modal.innerHTML = '<div class="dlg"><h2>' + h(title) + '</h2><p><b>' + h(user) + '</b> dùng <b>mật khẩu mặc định của cơ quan</b> và phải đổi mật khẩu khi đăng nhập lần đầu.</p><div class="actions"><button class="btn primary" data-act="closeModal">Đóng</button></div></div>';
+      return;
+    }
     modal.innerHTML = '<div class="dlg"><h2>' + h(title) + '</h2><p>Mật khẩu tạm của <b>' + h(user) + '</b> (chỉ hiện một lần, hãy gửi cho cán bộ):</p><code class="big">' + h(pass) + '</code>' +
       '<p class="muted small">Cán bộ sẽ được yêu cầu đổi mật khẩu ở lần đăng nhập đầu tiên.</p><div class="actions"><button class="btn primary" data-act="closeModal">Đã ghi lại</button></div></div>';
   }
@@ -864,7 +868,7 @@
         modal.innerHTML = '';
         await refreshBoot();
         await render();
-        if (out.tempPassword) showPassword('Đã tạo tài khoản', cur.fullName + ' (' + cur.id + ')', out.tempPassword);
+        if (out.tempPassword || out.usedDefault) showPassword('Đã tạo tài khoản', cur.fullName + ' (' + cur.id + ')', out.tempPassword, out.usedDefault);
         else toast('Đã lưu.');
         return;
       } catch (e) { toast(e.message, true); }
@@ -1025,9 +1029,9 @@
         modal.innerHTML = '<div class="dlg" style="max-width:760px"><h2>Kết quả nhập: ' + ok.length + ' / ' + res.length + ' dòng</h2>' +
           (tab === 'users' && ok.length ? '<p class="small">Mật khẩu tạm chỉ hiện <b>một lần</b>. Bấm “Chép danh sách” rồi dán vào Excel để gửi cho từng người; mỗi người phải đổi mật khẩu khi đăng nhập lần đầu.</p>' : '') +
           '<div class="tbl-wrap" style="max-height:50vh;overflow:auto"><table class="tbl"><thead><tr><th>' + (tab === 'users' ? 'CCCD' : 'Mã') + '</th><th>Tên</th>' + (tab === 'users' ? '<th>Mật khẩu tạm</th>' : '') + '<th>Kết quả</th></tr></thead><tbody>' +
-          res.map(function (r) { return '<tr><td>' + h(r.id) + '</td><td>' + h(r.name) + '</td>' + (tab === 'users' ? '<td><code>' + h(r.tempPassword || '') + '</code></td>' : '') + '<td>' + (r.ok && !r.error ? '<span class="badge b-green">Đã thêm</span>' : '<span class="badge ' + (r.ok ? 'b-amber' : 'b-red') + '">' + h(r.error) + '</span>') + '</td></tr>'; }).join('') +
+          res.map(function (r) { return '<tr><td>' + h(r.id) + '</td><td>' + h(r.name) + '</td>' + (tab === 'users' ? '<td>' + (r.usedDefault ? 'Mật khẩu mặc định' : '<code>' + h(r.tempPassword || '') + '</code>') + '</td>' : '') + '<td>' + (r.ok && !r.error ? '<span class="badge b-green">Đã thêm</span>' : '<span class="badge ' + (r.ok ? 'b-amber' : 'b-red') + '">' + h(r.error) + '</span>') + '</td></tr>'; }).join('') +
           '</tbody></table></div><div class="actions">' + (tab === 'users' && ok.length ? '<button class="btn" data-act="copyImport">Chép danh sách</button>' : '') + '<button class="btn primary" data-act="closeModal">Đóng</button></div></div>';
-        ACT.copyImport.text = ok.map(function (r) { return r.id + '\t' + r.name + '\t' + r.tempPassword; }).join('\n');
+        ACT.copyImport.text = ok.map(function (r) { return r.id + '\t' + r.name + '\t' + (r.usedDefault ? 'Mật khẩu mặc định' : r.tempPassword); }).join('\n');
       });
     },
     copyImport: function () {
@@ -1050,7 +1054,7 @@
       if (!confirm('Cấp lại mật khẩu tạm cho ' + u.fullName + '?')) return;
       run(el, async function () {
         var r = await api('adminResetPassword', { userId: u.id });
-        showPassword('Đã cấp lại mật khẩu', u.fullName + ' (' + u.id + ')', r.tempPassword);
+        showPassword('Đã cấp lại mật khẩu', u.fullName + ' (' + u.id + ')', r.tempPassword, r.usedDefault);
       });
     },
     saveConfig: function (el) {

@@ -4,7 +4,7 @@
 window.KPI_API = (function () {
   var CFG = window.KPI_CONFIG || {};
   var LOCAL = (!CFG.API_URL || /[?&]thu=1/.test(location.search)) && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  var DB_KEY = 'kpi_local_db_v5';
+  var DB_KEY = 'kpi_local_db_v6';
   var TEST = { id: '000000000000', password: 'thu12345' }; // tài khoản thử, chỉ tồn tại trong trình duyệt khi chạy trên máy
   var core = null;
 

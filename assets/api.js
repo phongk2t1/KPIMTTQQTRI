@@ -4,7 +4,7 @@
 window.KPI_API = (function () {
   var CFG = window.KPI_CONFIG || {};
   var LOCAL = (!CFG.API_URL || /[?&]thu=1/.test(location.search)) && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  var DB_KEY = 'kpi_local_db_v4';
+  var DB_KEY = 'kpi_local_db_v5';
   var TEST = { id: '000000000000', password: 'thu12345' }; // tài khoản thử, chỉ tồn tại trong trình duyệt khi chạy trên máy
   var core = null;
 
@@ -23,7 +23,12 @@ window.KPI_API = (function () {
         var r = db[t].filter(function (x) { return String(x.id) === String(id); })[0];
         if (r) { Object.assign(r, patch); save(); }
       },
-      remove: function (t, id) { db[t] = db[t].filter(function (x) { return String(x.id) !== String(id); }); save(); }
+      remove: function (t, id) { db[t] = db[t].filter(function (x) { return String(x.id) !== String(id); }); save(); },
+      group: function (t, field, value) { return db[t].filter(function (x) { return String(x[field]) === String(value); }); },
+      replaceGroup: function (t, field, value, rows) {
+        db[t] = db[t].filter(function (x) { return String(x[field]) !== String(value); }).concat(rows.map(function (r) { return Object.assign({}, r); }));
+        save();
+      }
     };
     var env = {
       hash: function (s) { // băm đơn giản, chỉ dùng khi chạy thử trên máy

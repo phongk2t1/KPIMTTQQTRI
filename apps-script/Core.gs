@@ -493,6 +493,20 @@ function KPI_createCore(store, env) {
       period: periodOut(period), owner: pub(owner), managerName: names[str(owner.managerId)] || '', ev: evOut(ev, owner, true),
       perms: perms(me, ev, owner, period), history: history
     };
+    // Kết quả của một người trong cây đánh giá = việc tự thực hiện đã được công nhận + kết quả của những người mình phụ trách.
+    // Trả kèm danh sách cấp dưới trực tiếp để hiện ngay trên phiếu của người đó.
+    var map = reportsMap(), kc = kpiCalculator(period.id, map), evs = {};
+    store.all('Evaluations').forEach(function (e) { if (str(e.periodId) === str(period.id)) evs[str(e.userId)] = e; });
+    out.team = (map[str(owner.id)] || []).slice().sort(function (a, b) { return rank(a) - rank(b) || str(a.fullName).localeCompare(str(b.fullName), 'vi'); })
+      .map(function (u) {
+        var e = evs[str(u.id)], k = kc(u);
+        return {
+          user: pub(u), status: e ? str(e.status) : (on(u.selfEval) ? 'chua_lap' : 'khong_ke'), taskCount: e ? num(e.taskCount) : 0,
+          finalTotal: e && e.status === 'da_chot' ? num(e.finalTotal) : null, kpi: k.kpi, people: k.people, done: k.done, reports: (map[str(u.id)] || []).length
+        };
+      });
+    var ko = kc(owner);
+    out.kpi = { own: ev && ev.status === 'da_chot' ? num(ev.finalTotal) : 0, total: ko.kpi, people: ko.people, done: ko.done };
     if (str(me.id) === str(owner.id) && on(owner.selfEval)) {
       var mine = store.all('Evaluations').filter(function (e) { return str(e.userId) === str(owner.id) && num(e.taskCount) > 0; });
       var byPeriod = {};

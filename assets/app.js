@@ -328,7 +328,7 @@
         '<div class="actions"><a class="btn primary" href="#/tudanhgia">Mở phiếu tự đánh giá</a><span class="muted">' + h(dl) + '</span>' +
         (!me.managerId ? '<span class="badge b-amber">Chưa được khai người phụ trách đánh giá</span>' : '') + '</div></div>';
     }
-    if (!others.length) return html + '<div class="card"><h2>Điểm của tôi qua các kỳ</h2>' + trendHtml(ov.trend) + '</div>';
+    if (!others.length && !me.isAdmin) return html + '<div class="card"><h2>Điểm của tôi qua các kỳ</h2>' + trendHtml(ov.trend) + '</div>';
 
     var wide = me.isAdmin && !mine.reports; // quản trị không phụ trách ai: xem toàn cơ quan
     var kpi = wide ? all.sum : mine.kpi, people = wide ? all.n : mine.people;

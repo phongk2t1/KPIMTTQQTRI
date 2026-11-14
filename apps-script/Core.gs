@@ -439,11 +439,24 @@ function KPI_createCore(store, env) {
     return { token: makeToken(u), boot: A.bootstrap(u) };
   }
 
+  /** Đơn vị người gọi được biết: quản trị thấy cả cây; người khác chỉ thấy đơn vị của mình, của những người mình phụ trách và các đơn vị cấp trên của chúng. */
+  function unitsFor(me) {
+    var all = store.all('Units').slice().sort(byOrder);
+    if (on(me.isAdmin)) return all;
+    var scope = subtreeIds(me.id, reportsMap()), byId = {}, keep = {};
+    all.forEach(function (u) { byId[str(u.id)] = u; });
+    store.all('Users').forEach(function (u) {
+      if (str(u.id) !== str(me.id) && !(on(u.active) && scope[str(u.id)])) return;
+      for (var id = str(u.unitId), g = 0; id && byId[id] && !keep[id] && g < 50; g++) { keep[id] = true; id = str(byId[id].parentId); }
+    });
+    return all.filter(function (u) { return keep[str(u.id)]; });
+  }
+
   A.bootstrap = function (me) {
     return {
       user: pub(me, true),
       hasReports: !!(reportsMap()[str(me.id)] || []).length,
-      units: store.all('Units').slice().sort(byOrder).map(function (u) { return { id: str(u.id), name: str(u.name), parentId: str(u.parentId), order: num(u.order) }; }),
+      units: unitsFor(me).map(function (u) { return { id: str(u.id), name: str(u.name), parentId: str(u.parentId), order: num(u.order) }; }),
       periods: store.all('Periods').slice().sort(function (a, b) { return str(b.startDate).localeCompare(str(a.startDate)); }).map(periodOut),
       config: publicConfig(),
       canUpload: !!env.uploadFile
@@ -479,6 +492,28 @@ function KPI_createCore(store, env) {
     var trend = store.all('Periods').slice().sort(function (a, b) { return str(a.startDate).localeCompare(str(b.startDate)); })
       .map(function (p) { var k = kpiCalculator(p.id, map)(me); return { periodId: str(p.id), name: str(p.name), avg: k.done || k.kpi > 0 ? k.kpi : null, count: k.done }; });
     return { rows: rows, trend: trend };
+  };
+
+  /** Số liệu nhiều kỳ cho dashboard: điểm từng kỳ của mọi người trong phạm vi được xem (chính mình, những người mình phụ trách; quản trị thấy tất cả). */
+  A.stats = function (me) {
+    var admin = on(me.isAdmin), scope = admin ? null : subtreeIds(me.id, reportsMap()), ok = {};
+    var users = store.all('Users');
+    users.forEach(function (u) { if (on(u.active) && (!scope || scope[str(u.id)] || str(u.id) === str(me.id))) ok[str(u.id)] = true; });
+    function n(v) { return has(v) ? num(v) : null; }
+    var out = { rows: [] };
+    store.all('Evaluations').forEach(function (e) {
+      if (!ok[str(e.userId)]) return;
+      out.rows.push({ userId: str(e.userId), periodId: str(e.periodId), status: str(e.status), taskCount: num(e.taskCount), selfTotal: n(e.selfTotal), mgrTotal: n(e.mgrTotal) });
+    });
+    if (admin) {
+      var act = users.filter(function (u) { return on(u.active); });
+      out.accounts = {
+        active: act.length, locked: users.length - act.length,
+        mustChange: act.filter(function (u) { return on(u.mustChange); }).length,
+        noManager: act.filter(function (u) { return on(u.selfEval) && !str(u.managerId); }).length
+      };
+    }
+    return out;
   };
 
   A.getEvaluation = function (me, d) {

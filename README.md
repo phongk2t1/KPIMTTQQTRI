@@ -37,6 +37,22 @@ Trang web tĩnh (GitHub Pages) + máy chủ Google Apps Script (dự án `KPIMTT
 
 Quyền xem: mỗi người thấy phiếu của mình; người phụ trách thấy mọi người nằm dưới mình trong cây phụ trách (mọi cấp); quản trị viên thấy tất cả. Chỉ người phụ trách trực tiếp mới đánh giá được phiếu. Quản trị viên có thể mở lại một phiếu đã công nhận để đánh giá lại.
 
+## Cách lưu phiếu trong bảng tính
+
+Phần cán bộ tự đánh giá và phần người phụ trách đánh giá nằm ở hai trang tính độc lập, mỗi công việc một dòng, cột như biểu Excel mẫu:
+
+| Trang tính | Nội dung | Cột chính |
+|---|---|---|
+| `PhieuDanhGia` | Cán bộ tự đánh giá | CCCD, Kỳ báo cáo, Mã phiếu, Mã công việc, TT, Tên công việc, Sản phẩm, Số lượng, Tháng thực hiện, A–E, S, N, Điểm của N, Minh chứng, Lặp lại, Đã đánh giá, Ngày giờ đánh giá |
+| `DanhGia` | Người phụ trách đánh giá | CCCD, Kỳ đánh giá, Mã phiếu, Mã công việc, các cột công việc, A–E, S, N, Điểm của N, CCCD người đánh giá, Ngày đánh giá, Giờ đánh giá, Khoá/Mở |
+| `TongHopPhieu` | Mỗi người mỗi kỳ một dòng | Trạng thái, số công việc, điểm tự chấm, điểm được công nhận, nhận xét |
+
+- Các cột A–E ghi dạng `2. Trên 01 đến 02 giờ` (số đứng đầu là điểm của mức).
+- Hai trang nối với nhau bằng **Mã công việc**; một phiếu gom theo **Mã phiếu**.
+- Máy chủ chỉ tìm và đọc/ghi đúng các dòng của phiếu đang thao tác, không nạp cả trang tính.
+- Xem, lọc, thống kê trực tiếp trên bảng tính thì được. **Không sửa tay** các cột mã, A–E, Khoá/Mở: phần mềm ghi lại cả nhóm dòng mỗi lần lưu.
+- Nâng cấp từ bản cũ (công việc dạng JSON): chạy hàm `migrateV2()` một lần; trang cũ được giữ lại với tên `PhieuDanhGia_cu`.
+
 ## Kỳ đánh giá, chốt nhập và khoá việc đã chấm
 
 - Mỗi kỳ có **hạn chốt nhập** (mặc định ngày cuối kỳ). Qua hạn, hoặc khi quản trị viên đặt trạng thái "Đã chốt nhập", cán bộ không nhập được nữa; người phụ trách vẫn chấm được. "Đã khoá hẳn" thì không ai thay đổi được.
@@ -101,7 +117,6 @@ Quản trị viên đăng nhập bằng CCCD, vào **Quản trị**:
 - Mật khẩu chỉ lưu dạng băm SHA-256 có muối. Quên mật khẩu quản trị: chạy hàm `resetAdminPassword` trong Apps Script.
 - Bảng tính chứa CCCD, số điện thoại, email: chỉ chia sẻ bảng tính cho người có trách nhiệm. Số điện thoại và email chỉ hiện với chính người đó và quản trị viên.
 - Không đổi tên trang tính và dòng tiêu đề trong bảng tính. Sửa tay dữ liệu thì giữ đúng mã đơn vị và CCCD.
-- Danh sách công việc của mỗi phiếu lưu dạng JSON trong các cột "Công việc (1)…(4)" của trang tính `PhieuDanhGia`; muốn xem dạng bảng thì dùng nút Xuất Excel trên phiếu.
 - Minh chứng: cán bộ dán đường dẫn (ví dụ liên kết tệp trên Drive của mình). Chức năng tải tệp trực tiếp đã tắt để máy chủ không cần quyền trên toàn bộ Google Drive.
 - Quy mô phù hợp: vài chục đến vài trăm người dùng. Apps Script xử lý lần lượt từng yêu cầu (mỗi thao tác 1–3 giây).
 

@@ -59,6 +59,15 @@ Phần cán bộ tự đánh giá và phần người phụ trách đánh giá n
 - Công việc đã được người phụ trách chấm thì bị khoá (🔒): cán bộ không sửa, không xoá được. Khi kỳ còn mở nhập, cán bộ vẫn thêm được việc mới rồi bấm **Nộp bổ sung**.
 - Muốn sửa việc đã chấm, người phụ trách trực tiếp bấm **Cho đánh giá lại** (hoặc **Yêu cầu sửa**); phiếu đó sửa được cả khi kỳ đã chốt nhập.
 
+## Người phụ trách chấm theo từng công việc
+
+- Mở phiếu của cấp dưới: mỗi công việc có ô chọn ở đầu dòng, khối A–E của lãnh đạo, ô **Nhận xét** và nút **Chấm điểm** ở cuối dòng.
+- Mức A–E được điền sẵn: việc lặp lại lấy kết quả chấm kỳ trước, việc khác lấy theo mức cán bộ tự chọn. Người phụ trách đổi mức nào cũng được, kể cả với việc đã chấm.
+- **Chấm điểm** (từng dòng) hoặc **Chấm điểm các việc đã chọn**: lưu điểm và khoá các việc đó. Khi mọi việc của phiếu đã được chấm, phiếu chuyển sang "Đã đánh giá" và điểm được tính vào KPI.
+- **Gửi nhận xét, cho sửa lại**: lưu nhận xét và mở khoá các việc đã chọn để cán bộ điều chỉnh; cán bộ thấy nhận xét ngay tại công việc đó trên phiếu của mình.
+- **Thêm công việc cho cấp dưới**: người phụ trách ghi tên việc, chấm A–E rồi bấm Chấm điểm; việc được đưa thẳng vào phiếu của cấp dưới (kể cả khi cấp dưới chưa lập phiếu), có nhãn "Người phụ trách thêm". Cột tự chấm của việc này để trống và không tính vào điểm tự chấm.
+- Trong bảng tính: nhận xét nằm ở cột "Nhận xét" của `DanhGia` và "Nhận xét của người đánh giá" của `PhieuDanhGia`; việc do người phụ trách thêm có CCCD ở cột "Người thêm việc (CCCD)". Sau khi nâng cấp có thêm cột, chạy hàm `upgradeSheets()` một lần.
+
 ## Việc lặp lại và lấy việc từ kỳ trước
 
 - Trên phiếu, tích **Việc lặp lại** cho những việc làm thường xuyên. Sang kỳ mới, khi cán bộ mở phiếu chưa lập, các việc này tự hiện sẵn kèm mức tự chấm.

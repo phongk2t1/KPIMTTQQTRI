@@ -124,7 +124,9 @@ function KPI_calc(levels) {
 
 /**
  * store: { all(table), insert(table,row), update(table,id,patch), remove(table,id),
- *          group(table,field,value) -> các dòng có field = value, replaceGroup(table,field,value,rows) -> thay toàn bộ nhóm đó }
+ *          group(table,field,value) -> các dòng có field = value, replaceGroup(table,field,value,rows) -> thay toàn bộ nhóm đó,
+ *          insertMany(table,rows), updateMany(table,[{id,patch}]) -> ghi nhiều dòng trong một lần }
+ * env.defaultPass?() -> { salt, passHash } của mật khẩu mặc định (nếu cơ quan có đặt)
  * env:   { hash(str), uuid(), secret(), uploadFile?(name,mime,base64) }
  */
 function KPI_createCore(store, env) {
@@ -205,6 +207,13 @@ function KPI_createCore(store, env) {
       err('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.', 'AUTH');
     }
     return u;
+  }
+  /** Mật khẩu ban đầu cho tài khoản mới / cấp lại: mật khẩu mặc định của cơ quan nếu có (đã băm sẵn), không thì sinh mật khẩu tạm ngẫu nhiên. */
+  function initialPass() {
+    var dp = env.defaultPass ? env.defaultPass() : null;
+    if (dp && str(dp.salt) && str(dp.passHash)) return { salt: str(dp.salt), passHash: str(dp.passHash), temp: '', usedDefault: true };
+    var p = tempPassword(), salt = env.uuid();
+    return { salt: salt, passHash: passHash(salt, p), temp: p, usedDefault: false };
   }
   function tempPassword() { return 'Kpi' + env.uuid().replace(/[^a-zA-Z0-9]/g, '').slice(0, 7) + '9'; }
   function setPassword(userId, password, mustChange) {
@@ -683,9 +692,8 @@ function KPI_createCore(store, env) {
     var exists = find(d.table, clean.id);
     if (isNew) {
       if (exists) err((d.table === 'Users' ? 'Số CCCD ' : 'Mã ') + clean.id + ' đã tồn tại.');
-      if (d.table === 'Users') { clean.salt = ''; clean.passHash = ''; clean.mustChange = 1; }
+      if (d.table === 'Users') { var ip = initialPass(); clean.salt = ip.salt; clean.passHash = ip.passHash; clean.mustChange = 1; out.tempPassword = ip.temp; out.usedDefault = ip.usedDefault; }
       store.insert(d.table, clean);
-      if (d.table === 'Users') { out.tempPassword = tempPassword(); setPassword(clean.id, out.tempPassword, true); }
     } else {
       if (!exists) err('Không tìm thấy bản ghi cần sửa.');
       store.update(d.table, clean.id, clean);
@@ -694,29 +702,67 @@ function KPI_createCore(store, env) {
     return out;
   };
 
-  /** Nhập nhiều dòng một lần (dán từ Excel). Người dùng: tạo trước, gán người phụ trách sau để thứ tự dòng không quan trọng. */
+  /** Nhập nhiều dòng một lần (dán từ Excel). Người dùng được kiểm tra hết rồi ghi vào bảng tính trong MỘT lần
+   * (vài trăm người vẫn chỉ mất vài giây); người phụ trách gán sau nên thứ tự dòng không quan trọng. */
   A.adminImport = function (me, d) {
     if (d.table !== 'Users' && d.table !== 'Units') err('Chỉ nhập hàng loạt được Đơn vị và Người dùng.');
-    var rows = (Array.isArray(d.rows) ? d.rows : []).slice(0, 500), results = [];
+    var rows = (Array.isArray(d.rows) ? d.rows : []).slice(0, 1000), results = [], fresh = [], seen = {};
     rows.forEach(function (r) {
       var res = { id: str(r.id), name: str(r.fullName || r.name) };
       try {
         var row = {}; Object.keys(r).forEach(function (k) { row[k] = r[k]; });
-        if (d.table === 'Users') { row.managerId = ''; row.active = true; }
-        var out = A.adminSave(me, { table: d.table, row: row, isNew: true });
-        res.ok = true; res.tempPassword = out.tempPassword || '';
+        if (d.table === 'Units') { // đơn vị ít và đơn vị cha phải có trước: ghi lần lượt
+          A.adminSave(me, { table: 'Units', row: row, isNew: true });
+        } else {
+          row.managerId = ''; row.active = true;
+          var clean = SAVERS.Users(row, true, me);
+          if (find('Users', clean.id) || seen[clean.id]) err('Số CCCD ' + clean.id + ' đã tồn tại.');
+          seen[clean.id] = true;
+          var ip = initialPass();
+          clean.salt = ip.salt; clean.passHash = ip.passHash; clean.mustChange = 1;
+          res.id = clean.id; res.tempPassword = ip.temp; res.usedDefault = ip.usedDefault;
+          fresh.push(clean);
+        }
+        res.ok = true;
       } catch (e) { if (!e.kpi) throw e; res.ok = false; res.error = e.message; }
       results.push(res);
     });
     if (d.table === 'Users') {
+      if (fresh.length) store.insertMany('Users', fresh);
+      var patches = [];
       rows.forEach(function (r, i) {
         if (!results[i].ok || !str(r.managerId)) return;
-        try { store.update('Users', str(r.id), { managerId: checkManager(r.id, r.managerId) }); }
-        catch (e) { if (!e.kpi) throw e; results[i].error = 'Đã tạo, nhưng chưa gán được người phụ trách: ' + e.message; }
+        try {
+          var m = checkManager(results[i].id, r.managerId), u = find('Users', results[i].id);
+          u.managerId = m; // cập nhật ngay trong bộ nhớ để các dòng sau kiểm tra vòng lặp đúng
+          patches.push({ id: results[i].id, patch: { managerId: m } });
+        } catch (e) { if (!e.kpi) throw e; results[i].error = 'Đã tạo, nhưng chưa gán được người phụ trách: ' + e.message; }
       });
+      if (patches.length) store.updateMany('Users', patches);
     }
     return { results: results };
   };
+
+  /** Đặt lại mật khẩu mặc định cho mọi tài khoản không có quyền quản trị; bổ sung các cột hệ thống còn trống
+   * cho những dòng nhập tay thẳng vào bảng tính. Chỉ gọi từ trình soạn thảo Apps Script. */
+  function resetAllPasswords() {
+    var dp = env.defaultPass ? env.defaultPass() : null;
+    if (!dp || !str(dp.salt) || !str(dp.passHash)) err('Chưa khai mật khẩu mặc định (KPI_DEFAULT_PASS trong Seed.gs).');
+    var patches = [], n = { reset: 0, fixed: 0, admin: 0 };
+    store.all('Users').forEach(function (u) {
+      var patch = {}, level = KPI_LEVELS[str(u.level)] ? str(u.level) : 'canbo';
+      if (str(u.level) !== level) patch.level = level;
+      if (str(u.active) === '') patch.active = 1;                                   // dòng nhập tay chưa có cột hệ thống
+      if (str(u.selfEval) === '') patch.selfEval = KPI_LEVELS[level].selfEval ? 1 : 0;
+      if (str(u.isAdmin) === '') patch.isAdmin = 0;
+      if (Object.keys(patch).length) n.fixed++;
+      if (on(u.isAdmin)) n.admin++;
+      else { patch.salt = str(dp.salt); patch.passHash = str(dp.passHash); patch.mustChange = 1; n.reset++; }
+      if (Object.keys(patch).length) patches.push({ id: str(u.id), patch: patch });
+    });
+    if (patches.length) store.updateMany('Users', patches);
+    return n;
+  }
 
   A.adminDelete = function (me, d) {
     var id = str(d.id);
@@ -739,9 +785,9 @@ function KPI_createCore(store, env) {
 
   A.adminResetPassword = function (me, d) {
     if (!find('Users', d.userId)) err('Không tìm thấy tài khoản.');
-    var p = tempPassword();
-    setPassword(d.userId, p, true);
-    return { tempPassword: p };
+    var ip = initialPass();
+    store.update('Users', d.userId, { salt: ip.salt, passHash: ip.passHash, mustChange: 1 });
+    return { tempPassword: ip.temp, usedDefault: ip.usedDefault };
   };
 
   A.adminSaveConfig = function (me, d) {
@@ -930,5 +976,5 @@ function KPI_createCore(store, env) {
     }
   }
 
-  return { handle: handle, seed: seed, importEvals: importEvals, migrateEval: migrateEval };
+  return { handle: handle, seed: seed, importEvals: importEvals, migrateEval: migrateEval, resetAllPasswords: resetAllPasswords };
 }

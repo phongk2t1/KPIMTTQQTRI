@@ -3,7 +3,7 @@
   'use strict';
   var API = window.KPI_API, CFG = window.KPI_CONFIG || {};
   var app = document.getElementById('app'), modal = document.getElementById('modal');
-  var S = { user: null, hasReports: false, units: [], periods: [], config: {}, canUpload: false, periodId: '', ov: null, ovKey: '' };
+  var S = { user: null, hasReports: false, units: [], periods: [], config: {}, canUpload: false, periodId: '', ov: null, ovKey: '', st: null };
   var E = null;   // phiếu đang mở
   var ADMIN = null; // dữ liệu trang quản trị
 
@@ -57,11 +57,11 @@
       var open = S.periods.filter(function (p) { return p.phase === 'mo'; })[0] || S.periods.filter(function (p) { return p.phase !== 'khoa'; })[0];
       S.periodId = (open || S.periods[0] || { id: '' }).id;
     }
-    S.ov = null;
+    S.ov = null; S.st = null;
   }
   function logout() {
     localStorage.removeItem('kpi_token');
-    S.user = null; S.ov = null; E = null; ADMIN = null; DASH = { type: '', id: '' };
+    S.user = null; S.ov = null; S.st = null; E = null; ADMIN = null; DASH = { type: '', id: '' };
     location.hash = '';
     render();
   }
@@ -72,6 +72,11 @@
       S.ovKey = S.periodId;
     }
     return S.ov;
+  }
+  /** Điểm từng kỳ của mọi người trong phạm vi được xem; dùng cho các biểu đồ nhiều kỳ. */
+  async function stats() {
+    if (!S.st) S.st = await api('stats');
+    return S.st;
   }
 
   /* ---------- Đăng nhập ---------- */
@@ -167,7 +172,7 @@
         periodId: S.periodId, userId: E.d.owner.id, mode: mode,
         tasks: sent.map(function (t) { return t.isNew ? { isNew: true, name: t.name, product: t.product, qty: t.qty, month: t.month, m: t.m, note: t.note } : { id: t.id, m: t.m, note: t.note }; })
       });
-      S.ov = null;
+      S.ov = null; S.st = null;
       setEval(d);
       keep.forEach(function (k) {
         if (k.isNew) { E.tasks.push(k); E.sel[k.id] = true; return; }
@@ -219,7 +224,7 @@
         return;
       }
       var html;
-      if (route === 'tongquan') html = dashboardHtml(await overview());
+      if (route === 'tongquan') html = dashboardHtml((await Promise.all([overview(), stats()]))[0]);
       else if (route === 'duyet') html = reviewHtml(await overview());
       else if (route === 'baocao') html = reportHtml(await overview());
       else if (route === 'tudanhgia' || route === 'phieu') {
@@ -313,10 +318,12 @@
   function focusHtml(rows) {
     if (!DASH.type) return '';
     var title, list, crumbs = '<button data-act="dashBack">‹ Đóng</button>';
+    if (DASH.type === 'hist') return histHtml(rows);
     if (DASH.type === 'unit') {
-      var ids = unitIdsUnder(DASH.id);
+      var ids = DASH.own ? {} : unitIdsUnder(DASH.id);
+      if (DASH.own) ids[DASH.id] = true;
       list = rows.filter(function (r) { return ids[r.user.unitId]; }).sort(sortPeople);
-      title = 'Đơn vị: ' + unitName(DASH.id);
+      title = 'Đơn vị: ' + unitName(DASH.id) + (DASH.own ? ' (cán bộ của chính đơn vị)' : '');
     } else {
       var who = rows.filter(function (r) { return r.user.id === DASH.id; })[0];
       if (!who) return '';
@@ -329,9 +336,139 @@
     var g = groupOf(DASH.type === 'unit' ? list : [].concat(list, underOf(rows, DASH.id)));
     return '<div class="card focus" id="dashFocus"><div class="crumbs">' + crumbs + '</div><h2>' + h(title) + ' <span class="muted small" style="font-weight:400">· ' + g.done + '/' + g.n + ' người đã được đánh giá · tổng ' + fmt(g.sum) + ' điểm</span></h2>' +
       '<div class="grid cols-2" style="margin-bottom:12px"><div>' + donut(g) + '</div><div class="muted small" style="align-self:center">' +
-      (DASH.type === 'unit' ? 'Danh sách cá nhân trong đơn vị (gồm đơn vị trực thuộc). Bấm vào một người để mở phiếu; bấm vào người phụ trách để xem nhóm của họ.' : 'Những người do đồng chí này trực tiếp phụ trách. Bấm vào cấp phó, cấp trưởng để xem tiếp các cá nhân họ phụ trách; bấm vào cá nhân để mở phiếu.') + '</div></div>' +
+      (DASH.type === 'unit' ? 'Danh sách cá nhân trong đơn vị' + (DASH.own ? '.' : ' (gồm đơn vị trực thuộc).') + ' Bấm vào một người để mở phiếu; bấm vào người phụ trách để xem nhóm của họ.' : 'Những người do đồng chí này trực tiếp phụ trách. Bấm vào cấp phó, cấp trưởng để xem tiếp các cá nhân họ phụ trách; bấm vào cá nhân để mở phiếu.') + '</div></div>' +
       '<div class="people">' + (list.map(function (r) { return personHtml(rows, r); }).join('') || '<div class="muted">Không có ai.</div>') + '</div></div>';
   }
+  /* ---------- Biểu đồ và bảng nhiều kỳ ---------- */
+  var RANK_ALL = false;
+  function r2(n) { return Math.round(n * 100) / 100; }
+  /** CCCD -> mã kỳ -> điểm của người đó trong kỳ đó. */
+  function stIndex() {
+    var ix = {};
+    ((S.st && S.st.rows) || []).forEach(function (x) { (ix[x.userId] || (ix[x.userId] = {}))[x.periodId] = x; });
+    return ix;
+  }
+  function periodsAsc() { return S.periods.slice().sort(function (a, b) { return String(a.startDate).localeCompare(String(b.startDate)); }); }
+  /** Kỳ cùng loại liền trước kỳ đang chọn. */
+  function prevPeriod() {
+    var p = period();
+    if (!p) return null;
+    var l = periodsAsc().filter(function (x) { return x.type === p.type && String(x.startDate) < String(p.startDate); });
+    return l[l.length - 1] || null;
+  }
+  function yearOf(p) { return String(p.startDate).slice(0, 4); }
+  function scoreAt(ix, userId, p) { var x = p && ix[userId] && ix[userId][p.id]; return x && x.mgrTotal != null ? x.mgrTotal : 0; }
+  /** Biểu đồ cột bấm được. items: [{label, v, prev, attrs, on, title}]; withPrev: vẽ thêm cột kỳ trước màu xám. */
+  function colsHtml(items, withPrev) {
+    if (!items.length) return '<div class="muted">Chưa có số liệu.</div>';
+    var H = 150, top = Math.max.apply(null, items.map(function (x) { return Math.max(x.v || 0, withPrev ? x.prev || 0 : 0); })) || 1;
+    return '<div class="cols">' + items.map(function (x) {
+      return '<button class="c' + (x.on ? ' on' : '') + '" ' + x.attrs + ' title="' + h(x.title || x.label) + '"><span class="bars" style="height:' + (H + 22) + 'px">' +
+        (withPrev ? '<i class="prev" style="height:' + Math.max(2, (x.prev || 0) / top * H) + 'px"></i>' : '') +
+        '<i style="height:' + Math.max(2, (x.v || 0) / top * H) + 'px"><span>' + fmt(x.v || 0) + '</span></i></span><small>' + h(x.label) + '</small></button>';
+    }).join('') + '</div>';
+  }
+  /** Cột điểm từng đơn vị (chỉ tính cán bộ của chính đơn vị nên các cột không cộng trùng nhau), kèm cột kỳ trước. */
+  function unitColsHtml(rows, ix, prev) {
+    var by = {};
+    rows.forEach(function (r) {
+      if (!r.user.selfEval) return;
+      var o = by[r.user.unitId] || (by[r.user.unitId] = { v: 0, prev: 0, n: 0 });
+      o.n++; o.v += r.mgrTotal || 0; o.prev += scoreAt(ix, r.user.id, prev);
+    });
+    var items = unitTree().filter(function (x) { return by[x.u.id]; }).map(function (x) {
+      var o = by[x.u.id];
+      return {
+        label: x.u.name, v: r2(o.v), prev: r2(o.prev), on: DASH.type === 'unit' && DASH.own && DASH.id === x.u.id,
+        attrs: 'data-act="dashUnit" data-own="1" data-id="' + h(x.u.id) + '"',
+        title: x.u.name + ': ' + o.n + ' người, ' + fmt(r2(o.v)) + ' điểm' + (prev ? ' (kỳ trước ' + fmt(r2(o.prev)) + ')' : '')
+      };
+    });
+    if (items.length < 2) return '';
+    return colsHtml(items, !!prev) + '<div class="legend">' + (prev ? '<span><i style="background:var(--c-none)"></i>' + h(prev.name) + '</span>' : '') +
+      '<span><i style="background:#2563eb"></i>' + h(period().name) + '</span></div><p class="muted small" style="margin:8px 0 0">Điểm đã được chấm của cán bộ thuộc chính đơn vị đó. Bấm vào một cột để xem từng người.</p>';
+  }
+  /** Cột điểm từng người trong phạm vi được xem, cao xuống thấp. */
+  function peopleColsHtml(rows) {
+    var list = rows.filter(function (r) { return r.user.selfEval; }).sort(function (a, b) { return (b.mgrTotal || 0) - (a.mgrTotal || 0) || a.user.fullName.localeCompare(b.user.fullName, 'vi'); });
+    return colsHtml(list.map(function (r) {
+      return {
+        label: r.user.fullName, v: r.mgrTotal || 0, on: DASH.type === 'hist' && DASH.id === r.user.id, attrs: 'data-act="dashHist" data-u="' + h(r.user.id) + '"',
+        title: r.user.fullName + ' · ' + unitName(r.user.unitId) + ': ' + fmt(r.mgrTotal || 0) + ' điểm'
+      };
+    }), false) + '<p class="muted small" style="margin:8px 0 0">Điểm đã được chấm trên phiếu của từng người trong kỳ. Bấm vào một cột để xem điểm của người đó qua các kỳ.</p>';
+  }
+  /** Bảng điểm qua các kỳ của một người: số việc, tự chấm, lãnh đạo chấm, chênh lệch. */
+  function histTable(ix, userId) {
+    var mine = ix[userId] || {}, ps = periodsAsc().filter(function (p) { return mine[p.id] || p.id === S.periodId; });
+    if (!ps.some(function (p) { return mine[p.id]; })) return '<div class="muted">Chưa có phiếu ở kỳ nào.</div>';
+    var tS = 0, tM = 0, tN = 0;
+    return '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Kỳ</th><th class="num">Số việc</th><th class="num">Tự chấm</th><th class="num">Lãnh đạo chấm</th><th class="num">Chênh lệch</th><th>Trạng thái</th></tr></thead><tbody>' +
+      ps.map(function (p) {
+        var x = mine[p.id] || { status: 'chua_lap' }, d = x.selfTotal != null && x.mgrTotal != null ? r2(x.mgrTotal - x.selfTotal) : null;
+        tS += x.selfTotal || 0; tM += x.mgrTotal || 0; tN += x.taskCount || 0;
+        return '<tr' + (p.id === S.periodId ? ' class="cur"' : '') + '><td>' + h(p.name) + '</td><td class="num">' + (x.taskCount || '–') + '</td><td class="num">' + fmt(x.selfTotal) + '</td><td class="num"><b>' + fmt(x.mgrTotal) + '</b></td><td class="num">' + diffHtml(d) + '</td><td>' + badge(x.status) + '</td></tr>';
+      }).join('') + '</tbody><tfoot><tr><td><b>Cộng</b></td><td class="num">' + tN + '</td><td class="num">' + fmt(r2(tS)) + '</td><td class="num"><b>' + fmt(r2(tM)) + '</b></td><td class="num">' + diffHtml(r2(tM - tS)) + '</td><td></td></tr></tfoot></table></div>';
+  }
+  function diffHtml(d) { return d == null ? '–' : '<span class="' + (d > 0 ? 'up' : d < 0 ? 'down' : 'muted') + '">' + (d > 0 ? '+' : '') + fmt(d) + '</span>'; }
+  function histHtml(rows) {
+    var who = rows.filter(function (r) { return r.user.id === DASH.id; })[0];
+    if (!who) return '';
+    return '<div class="card focus" id="dashFocus"><div class="crumbs"><button data-act="dashBack">‹ Đóng</button>' +
+      '<button data-act="open" data-u="' + h(who.user.id) + '">Mở phiếu kỳ này</button></div><h2>' + h(who.user.fullName) + ' <span class="muted small" style="font-weight:400">· ' + h(who.user.title || LEVEL[who.user.level]) + ' · ' + h(unitName(who.user.unitId)) + '</span></h2>' +
+      histTable(stIndex(), who.user.id) + '</div>';
+  }
+  /** Xếp hạng cá nhân theo tổng điểm các kỳ cùng loại trong năm của kỳ đang chọn. */
+  function rankHtml(rows, ix) {
+    var p = period(), y = yearOf(p), ps = S.periods.filter(function (x) { return x.type === p.type && yearOf(x) === y; });
+    var list = rows.filter(function (r) { return r.user.selfEval; }).map(function (r) {
+      var sum = 0, k = 0;
+      ps.forEach(function (q) { var x = ix[r.user.id] && ix[r.user.id][q.id]; if (x && x.mgrTotal != null) { sum += x.mgrTotal; k++; } });
+      return { r: r, sum: r2(sum), k: k };
+    }).sort(function (a, b) { return b.sum - a.sum || a.r.user.fullName.localeCompare(b.r.user.fullName, 'vi'); });
+    var shown = RANK_ALL ? list : list.slice(0, 10);
+    return '<div class="card"><h2>Xếp hạng cá nhân năm ' + h(y) + ' <span class="muted small" style="font-weight:400">· cộng ' + ps.length + ' kỳ ' + h((TYPE[p.type] || '').toLowerCase()) + '</span></h2>' +
+      '<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="num">Hạng</th><th>Họ tên</th><th class="num">Số kỳ có điểm</th><th class="num">Tổng điểm</th><th class="num">Bình quân một kỳ</th></tr></thead><tbody>' +
+      shown.map(function (x, i) {
+        return '<tr class="click" data-act="dashHist" data-u="' + h(x.r.user.id) + '"><td class="num">' + (i + 1) + '</td><td><b>' + h(x.r.user.fullName) + '</b><div class="muted small">' + h(unitName(x.r.user.unitId)) + '</div></td>' +
+          '<td class="num">' + x.k + '</td><td class="num"><b>' + fmt(x.sum) + '</b></td><td class="num">' + fmt(x.k ? r2(x.sum / x.k) : null) + '</td></tr>';
+      }).join('') + '</tbody></table></div>' +
+      (list.length > 10 ? '<div class="actions" style="margin-top:10px"><button class="btn sm" data-act="rankAll">' + (RANK_ALL ? 'Chỉ xem 10 người đầu' : 'Xem tất cả ' + list.length + ' người') + '</button></div>' : '') + '</div>';
+  }
+  /** Những người tăng, giảm điểm nhiều nhất so với kỳ cùng loại liền trước. */
+  function moversHtml(rows, ix, prev) {
+    var head = '<div class="card"><h2>So với kỳ trước' + (prev ? ' <span class="muted small" style="font-weight:400">· ' + h(prev.name) + '</span>' : '') + '</h2>';
+    if (!prev) return head + '<div class="muted">Chưa có kỳ cùng loại nào trước kỳ này để so sánh.</div></div>';
+    var list = rows.filter(function (r) { return r.user.selfEval; }).map(function (r) {
+      var cur = r.mgrTotal || 0, old = scoreAt(ix, r.user.id, prev);
+      return { r: r, cur: cur, old: old, d: r2(cur - old) };
+    }).filter(function (x) { return x.d; }).sort(function (a, b) { return b.d - a.d; });
+    if (!list.length) return head + '<div class="muted">Điểm kỳ này chưa khác kỳ trước.</div></div>';
+    var up = list.filter(function (x) { return x.d > 0; }).slice(0, 5), down = list.filter(function (x) { return x.d < 0; }).reverse().slice(0, 5);
+    function part(title, l) {
+      if (!l.length) return '';
+      return '<tr class="sub"><td colspan="4">' + title + '</td></tr>' + l.map(function (x) {
+        return '<tr class="click" data-act="dashHist" data-u="' + h(x.r.user.id) + '"><td><b>' + h(x.r.user.fullName) + '</b><div class="muted small">' + h(unitName(x.r.user.unitId)) + '</div></td><td class="num">' + fmt(x.old) + '</td><td class="num"><b>' + fmt(x.cur) + '</b></td><td class="num">' + diffHtml(x.d) + '</td></tr>';
+      }).join('');
+    }
+    return head + '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Họ tên</th><th class="num">Kỳ trước</th><th class="num">Kỳ này</th><th class="num">Chênh lệch</th></tr></thead><tbody>' +
+      part('Tăng nhiều nhất', up) + part('Giảm nhiều nhất', down) + '</tbody></table></div>' +
+      '<p class="muted small" style="margin:8px 0 0">Kỳ đang chấm dở thì điểm còn thấp hơn kỳ trước là bình thường.</p></div>';
+  }
+  /** Khối chỉ quản trị thấy: tình hình tài khoản và các kỳ đang mở. */
+  function systemHtml() {
+    var a = S.st && S.st.accounts;
+    if (!a) return '';
+    var open = S.periods.filter(function (p) { return p.phase === 'mo'; });
+    var soon = open.filter(function (p) { var d = daysLeft(p); return d != null && d >= 0 && d <= 7; });
+    return '<div class="card"><h2>Hệ thống</h2><div class="stats" style="margin-bottom:12px">' +
+      '<div class="stat"><div class="v">' + a.active + '</div><div class="l">Tài khoản đang hoạt động</div><div class="x">' + a.locked + ' tài khoản đã khoá</div></div>' +
+      '<div class="stat' + (a.mustChange ? ' s-none' : ' s-done') + '"><div class="v">' + a.mustChange + '</div><div class="l">Chưa đổi mật khẩu lần đầu</div></div>' +
+      '<div class="stat' + (a.noManager ? ' s-none' : ' s-done') + '"><div class="v">' + a.noManager + '</div><div class="l">Chưa khai người phụ trách</div><div class="x">phiếu của họ không ai chấm được</div></div>' +
+      '<div class="stat"><div class="v">' + open.length + '</div><div class="l">Kỳ đang mở nhập</div><div class="x">' + (soon.length ? 'chốt trong 7 ngày tới: ' + h(soon.map(function (p) { return p.name; }).join(', ')) : 'không có kỳ nào chốt trong 7 ngày tới') + '</div></div></div>' +
+      '<div class="actions"><a class="btn" href="#/quantri/users">Quản lý người dùng</a><a class="btn" href="#/quantri/periods">Quản lý kỳ đánh giá</a></div></div>';
+  }
+
   function remindText(ov) {
     var p = period(), late = ov.rows.filter(function (r) { return r.user.selfEval && ['chua_lap', 'nhap', 'yeu_cau_sua'].indexOf(r.status) >= 0; });
     var names = {}; ov.rows.forEach(function (r) { names[r.user.id] = r.user.fullName; });
@@ -350,7 +487,7 @@
     if (p && p.phase === 'khoa') dl = 'Kỳ đã khoá';
     else if (p && p.phase === 'chot') dl = 'Đã chốt nhập' + (p.deadline ? ' từ sau ngày ' + fdate(p.deadline) : '');
     else if (p && left != null) dl = 'Hạn chốt nhập ' + fdate(p.deadline) + ' (còn ' + left + ' ngày)';
-    var html = '';
+    var html = '', ix = stIndex(), prev = prevPeriod();
 
     if (me.selfEval) {
       html += '<div class="card"><h2>Phiếu của tôi · ' + h(p.name) + '</h2><div class="stats" style="margin-bottom:12px">' +
@@ -361,7 +498,8 @@
         '<div class="actions"><a class="btn primary" href="#/tudanhgia">Mở phiếu tự đánh giá</a><span class="muted">' + h(dl) + '</span>' +
         (!me.managerId ? '<span class="badge b-amber">Chưa được khai người phụ trách đánh giá</span>' : '') + '</div></div>';
     }
-    if (!others.length && !me.isAdmin) return html + '<div class="card"><h2>Điểm của tôi qua các kỳ</h2>' + trendHtml(ov.trend) + '</div>';
+    if (!others.length && !me.isAdmin) return html + '<div class="card"><h2>Điểm của tôi qua các kỳ</h2>' + trendHtml(ov.trend) + '</div>' +
+      '<div class="card"><h2>Bảng điểm từng kỳ</h2>' + histTable(ix, me.id) + '</div>';
 
     var wide = me.isAdmin && !mine.reports; // quản trị không phụ trách ai: xem toàn cơ quan
     var kpi = wide ? all.sum : mine.kpi, people = wide ? all.n : mine.people;
@@ -374,6 +512,7 @@
       '<div class="stat s-none"><div class="v">' + (all.n - all.done) + '</div><div class="l">Chưa được đánh giá</div><div class="x">' + all.wait + ' chờ chấm · ' + (all.draft + all.none) + ' chưa nộp</div></div>' +
       '<div class="stat hl"><div class="v">' + fmt(kpi) + '</div><div class="l">KPI tổng hợp ' + (wide ? 'toàn cơ quan' : 'do tôi phụ trách') + '</div><div class="x">bình quân ' + fmt(people ? kpi / people : null) + ' điểm một người</div></div></div>' +
       (todo ? '<div class="banner amber">Có <b>' + todo + '</b> phiếu đang chờ anh/chị chấm. <a href="#/duyet">Mở danh sách</a></div>' : '');
+    if (me.isAdmin) html += systemHtml();
 
     var tree = unitTree(), byUnit = tree.map(function (x) {
       var ids = unitIdsUnder(x.u.id);
@@ -381,11 +520,18 @@
     }).filter(function (x) { return x.g.n; });
     html += '<div class="grid cols-2"><div class="card"><h2>Tiến độ đánh giá · ' + h(p.name) + '</h2>' + donut(all) + (dl ? '<p class="muted small" style="margin:12px 0 0">' + h(dl) + '</p>' : '') + '</div>' +
       '<div class="card"><h2>Tiến độ chấm điểm từng đơn vị</h2>' + byUnit.map(function (x) {
-        return '<button class="bar-row' + (DASH.type === 'unit' && DASH.id === x.u.id ? ' on' : '') + '" data-act="dashUnit" data-id="' + h(x.u.id) + '" title="Bấm để xem danh sách cá nhân"><span>' + pad(x.depth) + h(x.u.name) + '</span>' + stackBar(x.g) +
+        return '<button class="bar-row' + (DASH.type === 'unit' && !DASH.own && DASH.id === x.u.id ? ' on' : '') + '" data-act="dashUnit" data-id="' + h(x.u.id) + '" title="Bấm để xem danh sách cá nhân"><span>' + pad(x.depth) + h(x.u.name) + '</span>' + stackBar(x.g) +
           '<span class="right small"><b>' + x.g.done + '/' + x.g.n + '</b> · ' + fmt(x.g.sum) + 'đ</span></button>';
       }).join('') + '<div class="legend">' + GROUPS.map(function (x) { return '<span><i style="background:' + x[2] + '"></i>' + x[1] + '</span>'; }).join('') + '</div><p class="muted small" style="margin:8px 0 0">Bấm vào một đơn vị để xem tiến độ từng cá nhân.</p></div></div>';
 
+    var trendCard = '<div class="card"><h2>KPI tổng hợp ' + (wide ? 'của tôi' : 'do tôi phụ trách') + ' qua các kỳ</h2>' + trendHtml(ov.trend) + '</div>';
+    var unitCols = unitColsHtml(rows, ix, prev);
+    html += unitCols ? '<div class="grid cols-2"><div class="card"><h2>Điểm theo đơn vị · ' + h(p.name) + '</h2>' + unitCols + '</div>' + trendCard + '</div>' : trendCard;
+    html += '<div class="card"><h2>Điểm từng người · ' + h(p.name) + '</h2>' + peopleColsHtml(rows) + '</div>';
+
     html += focusHtml(rows);
+
+    html += '<div class="grid cols-2">' + rankHtml(rows, ix) + moversHtml(rows, ix, prev) + '</div>';
 
     var base = mine.reports ? rows.filter(function (r) { return r.user.managerId === me.id; }) : rows.filter(function (r) { return r.reports > 0 && !rows.some(function (x) { return x.user.id === r.user.managerId; }); });
     if (base.length) {
@@ -394,14 +540,13 @@
     }
 
     var rm = remindText(ov), ks = Object.keys(rm.pend);
-    html += '<div class="grid cols-2"><div class="card"><h2>Nhắc nhở</h2>' +
+    html += '<div class="card"><h2>Nhắc nhở</h2>' +
       (rm.late.length || ks.length ? '' : '<div class="muted">Không còn ai phải nhắc trong kỳ này.</div>') +
       (rm.late.length ? '<p style="margin:0 0 6px"><b>' + rm.late.length + '</b> người chưa nộp phiếu' + (dl ? ' · <span class="muted">' + h(dl) + '</span>' : '') + '</p><div class="tbl-wrap" style="max-height:240px;overflow:auto"><table class="tbl"><tbody>' + rm.late.map(function (r) {
         return '<tr class="click" data-act="open" data-u="' + h(r.user.id) + '"><td>' + h(r.user.fullName) + '<div class="muted small">' + h(unitName(r.user.unitId)) + '</div></td><td class="right">' + badge(r.status) + '</td></tr>';
       }).join('') + '</tbody></table></div>' : '') +
       (ks.length ? '<p style="margin:12px 0 6px"><b>Người phụ trách còn phiếu chờ chấm</b></p>' + ks.map(function (k) { return '<div class="bar-row" style="grid-template-columns:1fr auto"><span>' + h(rm.names[k] || 'Chưa khai người phụ trách') + '</span><span class="badge b-blue">' + rm.pend[k] + ' phiếu</span></div>'; }).join('') : '') +
-      (rm.late.length || ks.length ? '<div class="actions" style="margin-top:12px"><button class="btn" data-act="copyRemind">Chép nội dung nhắc nhở</button><span class="muted small">Dán vào Zalo, email để gửi</span></div>' : '') + '</div>' +
-      '<div class="card"><h2>KPI tổng hợp ' + (wide ? 'của tôi' : 'do tôi phụ trách') + ' qua các kỳ</h2>' + trendHtml(ov.trend) + '</div></div>';
+      (rm.late.length || ks.length ? '<div class="actions" style="margin-top:12px"><button class="btn" data-act="copyRemind">Chép nội dung nhắc nhở</button><span class="muted small">Dán vào Zalo, email để gửi</span></div>' : '') + '</div>';
     return html;
   }
 
@@ -963,7 +1108,13 @@
       var sh = $('.shell');
       if (sh) sh.classList.toggle('side-off', off);
     },
-    dashUnit: function (el) { DASH = DASH.type === 'unit' && DASH.id === el.dataset.id ? { type: '', id: '' } : { type: 'unit', id: el.dataset.id }; redrawDash(); },
+    dashUnit: function (el) {
+      var own = !!el.dataset.own;
+      DASH = DASH.type === 'unit' && DASH.id === el.dataset.id && !!DASH.own === own ? { type: '', id: '' } : { type: 'unit', id: el.dataset.id, own: own };
+      redrawDash();
+    },
+    dashHist: function (el) { DASH = DASH.type === 'hist' && DASH.id === el.dataset.u ? { type: '', id: '' } : { type: 'hist', id: el.dataset.u }; redrawDash(); },
+    rankAll: function () { RANK_ALL = !RANK_ALL; redrawDash(); },
     dashUser: function (el) { DASH = { type: 'user', id: el.dataset.u }; redrawDash(); },
     dashBack: function () { DASH = { type: '', id: '' }; redrawDash(); },
     copyRemind: function () {
@@ -983,7 +1134,7 @@
       if (note === null) return;
       run(el, async function () {
         var d = await api('review', { evalId: E.d.ev.id, decision: 'redo', comment: note });
-        S.ov = null;
+        S.ov = null; S.st = null;
         setEval(d);
         toast('Đã mở cho cán bộ đánh giá lại.');
       });
@@ -1067,7 +1218,7 @@
       }
       run(el, async function () {
         var d = await api('saveSelf', { periodId: S.periodId, tasks: tasks, comment: $('#selfComment').value, submit: submit });
-        S.ov = null;
+        S.ov = null; S.st = null;
         setEval(d);
         toast(!submit ? 'Đã lưu nháp.' : d.perms.selfScore ? 'Đã lưu và chấm điểm.' : 'Đã nộp phiếu.');
       });
@@ -1082,7 +1233,7 @@
       }
       run(el, async function () {
         var d = await api('review', { evalId: E.d.ev.id, tasks: E.tasks.map(function (t) { return { id: t.id, m: t.m }; }), comment: comment, decision: el.dataset.d });
-        S.ov = null;
+        S.ov = null; S.st = null;
         setEval(d);
         toast(ret ? 'Đã gửi yêu cầu sửa.' : 'Đã công nhận kết quả.');
       });
@@ -1092,7 +1243,7 @@
       if (note === null) return;
       run(el, async function () {
         var d = await api('reopen', { evalId: E.d.ev.id, note: note });
-        S.ov = null;
+        S.ov = null; S.st = null;
         setEval(d);
         toast('Đã mở lại phiếu.');
       });

@@ -86,6 +86,16 @@ Phần cán bộ tự đánh giá và phần người phụ trách đánh giá n
 - Danh sách người phụ trách: bấm vào cấp trưởng, cấp phó để xem các cá nhân họ phụ trách.
 - Thẻ **Nhắc nhở**: ai chưa nộp, người phụ trách nào còn phiếu chờ chấm; có nút chép nội dung để gửi qua Zalo, email (phần mềm không tự gửi tin).
 
+Các khối nhiều kỳ trên trang Tổng quan (lấy bằng thao tác `stats`, một lần gọi cho mọi kỳ):
+
+- **Điểm theo đơn vị**: cột điểm kỳ này đặt cạnh cột kỳ cùng loại liền trước; mỗi cột chỉ tính cán bộ của chính đơn vị nên không cộng trùng. Bấm cột để xem từng người.
+- **Điểm từng người**: bấm một cột để mở bảng điểm qua các kỳ của người đó (số việc, tự chấm, lãnh đạo chấm, chênh lệch).
+- **Xếp hạng cá nhân trong năm**: cộng các kỳ cùng loại với kỳ đang chọn trong cùng năm.
+- **So với kỳ trước**: năm người tăng và năm người giảm điểm nhiều nhất.
+- **Hệ thống** (chỉ quản trị): số tài khoản, số người chưa đổi mật khẩu lần đầu, số người chưa khai người phụ trách, các kỳ đang mở và sắp chốt.
+
+**Phạm vi được xem.** Mỗi người chỉ thấy chính mình và những người nằm dưới mình trong cây phụ trách (mọi cấp); hai nhánh ngang hàng không thấy nhau; quản trị thấy tất cả. Quy tắc này do máy chủ kiểm tra ở `overview`, `stats`, `getEvaluation`. Danh sách đơn vị gửi về cũng chỉ gồm đơn vị của mình, của những người mình phụ trách và các đơn vị cấp trên của chúng.
+
 ## Dữ liệu mẫu
 
 `apps-script/DuLieuMau.gs` (không đưa lên GitHub) chứa các phiếu thật lấy từ tệp Excel. Hàm `importSample()` trong `Code.gs` nạp chúng vào bảng tính: mỗi tháng một kỳ; tháng nào người phụ trách đã chấm đủ thì ở trạng thái đã đánh giá, còn lại chờ chấm.

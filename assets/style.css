@@ -247,3 +247,20 @@ ul.tree > li { border-left-color: var(--pri); }
   .tbl-wrap.sheet { max-height: none; overflow: visible; border: 0; }
   table.sheet { min-width: 0; font-size: 9px; } .sheet th, .sheet td, .sheet .c-name, .sheet td.lv, .sheet th.fh { min-width: 0; position: static; }
 }
+
+/* Bổ sung: tiến độ, minh chứng, kho công việc mẫu, xếp loại */
+.sheet .tx { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: flex-end; margin-top: 8px; padding: 8px; border: 1px dashed var(--line); border-radius: 10px; background: #f8fafc; }
+.sheet .tx label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted); font-weight: 600; }
+.sheet .tx label.ck, .lib label.ck { flex-direction: row; align-items: center; gap: 6px; font-size: 12px; }
+.sheet .tx input[type=date], .sheet .tx input[type=number] { width: 124px; padding: 3px 6px; font-size: 13px; }
+.sheet .tx input[type=number] { width: 84px; }
+.sheet .tx.mg { background: #f3f7ff; }
+.sheet .evs { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: 13px; }
+.sheet .mnote.fb { background: #eef4ff; border-color: #c3d6fb; color: #173d94; }
+.lib { margin-bottom: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #f8fafc; }
+.lib-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.lib-top input[type=search] { flex: 1; min-width: 240px; }
+.lib label.ck { display: flex; color: var(--muted); }
+.tbl.rate select, .tbl.rate input[type=number] { padding: 3px 6px; font-size: 13px; min-width: 0; }
+.tbl.rate input[type=number] { width: 70px; }
+@media print { .lib, .sheet .tx { display: none !important; } }

@@ -177,7 +177,7 @@ function doGet() {
 
 /* Các thao tác chỉ đọc không cần xếp hàng chờ khoá: nhiều người đăng nhập, xem phiếu cùng lúc vẫn chạy song song.
  * Chỉ thao tác ghi mới lấy khoá để hai lượt ghi không chen nhau. */
-var KPI_READ_ACTIONS = { login: 1, bootstrap: 1, overview: 1, getEvaluation: 1, tasksFrom: 1, adminList: 1 };
+var KPI_READ_ACTIONS = { login: 1, bootstrap: 1, overview: 1, stats: 1, getEvaluation: 1, tasksFrom: 1, adminList: 1 };
 
 function doPost(e) {
   var req;

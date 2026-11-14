@@ -19,7 +19,7 @@ function getSpreadsheet_() {
 
 /** Kho dữ liệu trên Google Sheet: mỗi bảng là một trang tính, dòng 1 là tiêu đề cột tiếng Việt (KPI_LABELS). */
 function makeSheetStore_(ss) {
-  var cache = {};
+  var cache = {}, metas = {}, found = {};
   function load(t) {
     if (cache[t]) return cache[t];
     var sh = ss.getSheetByName(KPI_SHEETS[t]);
@@ -65,8 +65,64 @@ function makeSheetStore_(ss) {
       if (i < 0) return;
       T.sh.deleteRow(i + 2);
       T.rows.splice(i, 1);
+    },
+    /* Hai hàm dưới dùng cho bảng lớn (công việc, đánh giá): chỉ tìm và đọc/ghi đúng các dòng của một phiếu,
+     * không nạp cả trang tính. */
+    group: function (t, field, value) {
+      var G = meta(t), nums = locate(G, t, field, value), out = [];
+      runs(nums).forEach(function (r) {
+        G.sh.getRange(r[0], 1, r[1], G.head.length).getValues().forEach(function (v) {
+          var o = {};
+          G.head.forEach(function (h, j) { if (h) o[h] = v[j]; });
+          out.push(o);
+        });
+      });
+      return out;
+    },
+    replaceGroup: function (t, field, value, rows) {
+      var G = meta(t), old = locate(G, t, field, value), targets = [];
+      for (var i = 0; i < rows.length; i++) targets.push(i < old.length ? old[i] : ++G.last); // ghi đè dòng cũ, thừa thì nối cuối
+      var k = 0;
+      runs(targets).forEach(function (r) {
+        var block = rows.slice(k, k + r[1]).map(function (o) { return G.head.map(function (h) { return cell(o[h]); }); });
+        G.sh.getRange(r[0], 1, r[1], G.head.length).setNumberFormat('@').setValues(block);
+        k += r[1];
+      });
+      var extra = old.slice(rows.length); // phiếu ít việc hơn trước: xoá trắng các dòng thừa
+      if (extra.length) G.sh.getRangeList(runs(extra).map(function (r) { return 'A' + r[0] + ':' + colName(G.head.length) + (r[0] + r[1] - 1); })).clearContent();
+      found[t + '|' + field + '|' + value] = targets.slice().sort(function (a, b) { return a - b; });
     }
   };
+
+  function meta(t) { // tiêu đề cột và dòng cuối của một trang tính, không đọc dữ liệu
+    if (metas[t]) return metas[t];
+    var sh = ss.getSheetByName(KPI_SHEETS[t]);
+    if (!sh) throw new Error('Thiếu trang tính "' + KPI_SHEETS[t] + '". Hãy chạy hàm setup() hoặc migrateV2().');
+    var byLabel = {};
+    KPI_TABLES[t].forEach(function (f) { byLabel[KPI_LABELS[t][f]] = f; });
+    var head = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0].map(function (h) { h = String(h).trim(); return byLabel[h] || h; });
+    return (metas[t] = { sh: sh, head: head, last: Math.max(sh.getLastRow(), 1) });
+  }
+  function locate(G, t, field, value) { // số dòng (tăng dần) của các dòng có field = value
+    var key = t + '|' + field + '|' + value;
+    if (found[key]) return found[key];
+    var col = G.head.indexOf(field) + 1, nums = [];
+    if (col > 0 && G.last >= 2 && String(value) !== '') {
+      G.sh.getRange(2, col, G.last - 1, 1).createTextFinder(String(value)).matchEntireCell(true).matchCase(true).findAll()
+        .forEach(function (r) { nums.push(r.getRow()); });
+      nums.sort(function (a, b) { return a - b; });
+    }
+    return (found[key] = nums);
+  }
+  function runs(nums) { // gom các số dòng liền nhau: [[dòng đầu, số dòng], ...]
+    var out = [];
+    nums.forEach(function (n) {
+      var last = out[out.length - 1];
+      if (last && last[0] + last[1] === n) last[1]++; else out.push([n, 1]);
+    });
+    return out;
+  }
+  function colName(n) { var s = ''; while (n > 0) { s = String.fromCharCode(65 + (n - 1) % 26) + s; n = Math.floor((n - 1) / 26); } return s; }
 }
 
 function makeEnv_() {
@@ -111,15 +167,14 @@ function doPost(e) {
   }
 }
 
-/** Chạy MỘT LẦN: tạo các trang tính và tài khoản quản trị khởi đầu (lấy từ Seed.gs nếu có). */
-function setup() {
-  var ss = getSpreadsheet_();
+/** Tạo các trang tính còn thiếu, kèm dòng tiêu đề tiếng Việt. */
+function ensureSheets_(ss) {
   Object.keys(KPI_TABLES).forEach(function (t) {
     var sh = ss.getSheetByName(KPI_SHEETS[t]) || ss.insertSheet(KPI_SHEETS[t]);
     var head = KPI_TABLES[t].map(function (f) { return KPI_LABELS[t][f]; });
     if (sh.getLastRow() === 0) {
       sh.getRange(1, 1, sh.getMaxRows(), head.length).setNumberFormat('@');
-      sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold').setBackground('#fde8e8');
+      sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold').setBackground('#dbeafe').setWrap(true);
       sh.setFrozenRows(1);
     }
   });
@@ -127,6 +182,12 @@ function setup() {
     var first = ss.getSheetByName(name);
     if (first && first.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(first);
   });
+}
+
+/** Chạy MỘT LẦN: tạo các trang tính và tài khoản quản trị khởi đầu (lấy từ Seed.gs nếu có). */
+function setup() {
+  var ss = getSpreadsheet_();
+  ensureSheets_(ss);
 
   var core = KPI_createCore(makeSheetStore_(ss), makeEnv_());
   var out = core.seed({ admin: typeof KPI_SEED_ADMIN !== 'undefined' ? KPI_SEED_ADMIN : null });
@@ -157,5 +218,41 @@ function importSample() {
     var core = KPI_createCore(makeSheetStore_(getSpreadsheet_()), makeEnv_());
     core.importEvals(KPI_SAMPLE_EVALS.userId, KPI_SAMPLE_EVALS.months).forEach(function (line) { Logger.log(line); });
     Logger.log('ĐÃ NẠP XONG.');
+  } finally { lock.releaseLock(); }
+}
+
+/** Chạy MỘT LẦN khi nâng cấp từ bản cũ (mỗi phiếu một dòng, công việc dạng JSON trong trang "PhieuDanhGia").
+ * Trang cũ được đổi tên thành "PhieuDanhGia_cu" và giữ lại làm bản sao lưu; dữ liệu được tách sang 3 trang mới:
+ * TongHopPhieu (mỗi phiếu một dòng), PhieuDanhGia (cán bộ tự chấm, mỗi việc một dòng), DanhGia (người phụ trách chấm). */
+function migrateV2() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    var ss = getSpreadsheet_(), old = ss.getSheetByName('PhieuDanhGia_cu');
+    if (!old) {
+      var cur = ss.getSheetByName('PhieuDanhGia');
+      var isOld = cur && String(cur.getRange(1, 1).getValue()).trim() === 'Mã phiếu';
+      if (isOld) { cur.setName('PhieuDanhGia_cu'); old = cur; }
+    }
+    ensureSheets_(ss);
+    if (!old) { Logger.log('Không có dữ liệu kiểu cũ để chuyển. Đã bảo đảm đủ các trang tính mới.'); return; }
+    var map = { 'Mã phiếu': 'id', 'Mã kỳ': 'periodId', 'CCCD': 'userId', 'Trạng thái': 'status', 'Số công việc': 'taskCount', 'Điểm tự chấm': 'selfTotal',
+      'Điểm người phụ trách chấm': 'mgrTotal', 'Điểm được công nhận': 'finalTotal', 'Xếp loại': 'rating', 'Tự nhận xét': 'selfComment',
+      'Nhận xét của người phụ trách': 'mgrComment', 'Lúc nộp': 'submittedAt', 'Lúc đánh giá': 'reviewedAt', 'CCCD người đánh giá': 'reviewerId', 'Cập nhật': 'updatedAt' };
+    var v = old.getDataRange().getValues(), head = v[0].map(function (h) { return String(h).trim(); });
+    var core = KPI_createCore(makeSheetStore_(ss), makeEnv_()), n = 0;
+    v.slice(1).forEach(function (r) {
+      var header = {}, json = '';
+      head.forEach(function (h, j) {
+        if (map[h]) header[map[h]] = r[j];
+        else if (/^Công việc \(/.test(h)) json += String(r[j]);
+      });
+      if (String(header.id) === '') return;
+      var tasks = [];
+      try { tasks = JSON.parse(json || '[]'); } catch (e) { Logger.log('Không đọc được công việc của phiếu ' + header.id); }
+      Logger.log(core.migrateEval(header, tasks));
+      n++;
+    });
+    Logger.log('ĐÃ CHUYỂN XONG ' + n + ' phiếu. Trang cũ giữ lại với tên PhieuDanhGia_cu.');
   } finally { lock.releaseLock(); }
 }

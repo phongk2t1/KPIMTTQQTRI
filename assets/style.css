@@ -275,3 +275,9 @@ ul.tree > li { border-left-color: var(--pri); }
 .sheet span.n { white-space: nowrap; }
 .sheet .catinfo { margin-top: 6px; font-size: 13px; padding: 6px 8px; border-radius: 10px; background: #f3f7ff; border: 1px solid #d6e3fb; }
 .sheet .tx.hq { flex-direction: column; align-items: flex-start; gap: 4px; }
+
+/* Nhật ký sử dụng: thanh lọc */
+.usebar { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: flex-end; }
+.usebar label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); flex: 0 1 170px; min-width: 140px; }
+.usebar label.grow { flex: 1 1 240px; }
+.usebar input, .usebar select { width: 100%; }

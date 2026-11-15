@@ -39,6 +39,7 @@
     setTimeout(function () { d.remove(); }, bad ? 6000 : 3000);
   }
   async function api(action, data) {
+    if (!READS[action]) dropKept(); // có thao tác ghi: bản lưu tạm không còn đúng
     try { return await API.call(action, data); }
     catch (e) {
       if (e.code === 'AUTH') { logout(); }
@@ -59,9 +60,21 @@
       S.periodId = (open || S.periods[0] || { id: '' }).id;
     }
     S.ov = null; S.st = null;
+    if (b.pre && b.pre.periodId === S.periodId) { S.ov = b.pre.ov; S.ovKey = S.periodId; S.st = b.pre.st; keep('ov:' + S.periodId, S.ov); keep('st', S.st); }
+    try { var c = Object.assign({}, b); delete c.pre; localStorage.setItem('kpi_boot', JSON.stringify(c)); } catch (e) { /* bỏ qua */ }
+  }
+  /* Bản lưu tạm trên trình duyệt để mở trang là có ngay số liệu lần trước, rồi làm mới ngầm. Mọi thao tác ghi đều xoá bản lưu. */
+  var READS = { bootstrap: 1, overview: 1, stats: 1, getEvaluation: 1, tasksFrom: 1, adminList: 1, evidenceGet: 1, libraryFind: 1, adminLibraryList: 1, rating: 1, catalog: 1, adminUsage: 1 };
+  function keep(k, v) { try { sessionStorage.setItem('kpi_c:' + k, JSON.stringify(v)); } catch (e) { /* bỏ qua */ } }
+  function kept(k) { try { return JSON.parse(sessionStorage.getItem('kpi_c:' + k) || 'null'); } catch (e) { return null; } }
+  function dropKept() { try { Object.keys(sessionStorage).forEach(function (k) { if (k.indexOf('kpi_c:') === 0) sessionStorage.removeItem(k); }); } catch (e) { /* bỏ qua */ } }
+  /** Sau khi làm mới ngầm mà số liệu khác bản đang hiện: vẽ lại, trừ khi đang mở phiếu (tránh mất nội dung đang gõ). */
+  function redrawIfList() {
+    var r = location.hash.replace(/^#\/?/, '').split('/')[0] || 'tongquan';
+    if (['tongquan', 'duyet', 'baocao'].indexOf(r) >= 0 && !modal.innerHTML) render();
   }
   function logout() {
-    localStorage.removeItem('kpi_token');
+    localStorage.removeItem('kpi_token'); localStorage.removeItem('kpi_boot'); dropKept();
     S.user = null; S.ov = null; S.st = null; E = null; ADMIN = null; DASH = { type: '', id: '' };
     location.hash = '';
     render();
@@ -69,14 +82,23 @@
   async function overview(force) {
     if (!S.periodId) return { rows: [], trend: [] };
     if (force || !S.ov || S.ovKey !== S.periodId) {
-      S.ov = await api('overview', { periodId: S.periodId });
-      S.ovKey = S.periodId;
+      var pid = S.periodId, old = force ? null : kept('ov:' + pid);
+      var fresh = api('overview', { periodId: pid }).then(function (d) {
+        keep('ov:' + pid, d);
+        if (S.periodId === pid) { var changed = old && JSON.stringify(old) !== JSON.stringify(d); S.ov = d; S.ovKey = pid; if (changed) redrawIfList(); }
+        return d;
+      });
+      if (old) { S.ov = old; S.ovKey = pid; fresh.catch(function () {}); } else await fresh;
     }
     return S.ov;
   }
   /** Điểm từng kỳ của mọi người trong phạm vi được xem; dùng cho các biểu đồ nhiều kỳ. */
   async function stats() {
-    if (!S.st) S.st = await api('stats');
+    if (!S.st) {
+      var old = kept('st');
+      var fresh = api('stats').then(function (d) { keep('st', d); var changed = old && JSON.stringify(old) !== JSON.stringify(d); S.st = d; if (changed) redrawIfList(); return d; });
+      if (old) { S.st = old; fresh.catch(function () {}); } else await fresh;
+    }
     return S.st;
   }
 
@@ -99,7 +121,7 @@
   async function doLogin(username, password, btn) {
     if (btn) btn.disabled = true;
     try {
-      var r = await API.call('login', { username: username, password: password });
+      var r = await API.call('login', { username: username, password: password, pre: 1 });
       localStorage.setItem('kpi_token', r.token);
       setBoot(r.boot);
       location.hash = '#/tongquan';
@@ -176,6 +198,7 @@
         periodId: S.periodId, userId: E.d.owner.id, mode: mode,
         tasks: sent.map(function (t) { var x = t.isNew ? { isNew: true, name: t.name, product: t.product, qty: t.qty, month: t.month, m: t.m, note: t.note } : { id: t.id, m: t.m, note: t.note };
           x.progress = t.mProgress; x.doneDate = t.mDone; x.bonus = t.mBonus; x.ot = !!t.ot; x.oq = !!t.oq; // phần người phụ trách xác nhận
+          if (t.isNew && t.src) x.src = t.src; // giao nối tiếp từ việc của người giao
           if (t.code) { x.code = t.code; x.h = t.H; x.q = t.Q; x.t = t.T; x.deadline = t.deadline; } // việc trong Danh mục sản phẩm
           return x;
         })
@@ -573,7 +596,7 @@
   }
   function reviewHtml(ov) {
     var mine = ov.rows.filter(function (r) { return r.canReview; });
-    var direct = ov.rows.filter(function (r) { return r.user.managerId === S.user.id; });
+    var direct = ov.rows.filter(function (r) { return r.user.managerId === S.user.id || (r.user.extra || []).indexOf(S.user.id) >= 0; });
     return '<div class="card"><h2>Phiếu chờ anh/chị đánh giá (' + mine.length + ')</h2>' + rowsTable(mine, true) + '</div>' +
       '<div class="card"><h2>Những người anh/chị trực tiếp phụ trách (' + direct.length + ')</h2>' + rowsTable(direct, false) +
       '<p class="muted small">KPI tổng hợp của một người = điểm phiếu của chính người đó đã được công nhận + KPI của những người do người đó phụ trách. Xem toàn bộ các cấp ở mục <a href="#/baocao">KPI tổng hợp</a>.</p></div>';
@@ -602,6 +625,7 @@
   }
   function setEval(d) {
     var p = d.perms;
+    if (p.canScore) loadMyTasks();
     E = { d: d, tasks: JSON.parse(JSON.stringify(d.ev.tasks || [])), months: periodMonths(d.period), canMgr: p.canScore, sel: {}, editing: {}, orig: {} };
     E.tasks.forEach(function (t) {
       if (!t.s) t.s = [0, 0, 0, 0, 0];
@@ -632,14 +656,15 @@
   }
   function levelCell(t, ti, key, fi, editable) {
     var f = M.factors[fi], v = (t[key] || [])[fi] || 0;
-    if (!editable) return '<td class="lv">' + (v ? '<b>' + v + '</b> · ' + h(f.levels[v - 1][0]) : '<span class="muted">–</span>') + '</td>';
-    return '<td class="lv"><select data-lv="' + key + '" data-fi="' + fi + '" data-t="' + ti + '" aria-label="' + f.key + ' – ' + h(f.name) + '"' + (v || t.code ? '' : ' class="empty"') + '>' +
+    if (!editable) return '<td class="lv" data-l="' + f.key + '" data-g="' + key + '">' + (v ? '<b>' + v + '</b> · ' + h(f.levels[v - 1][0]) : '<span class="muted">–</span>') + '</td>';
+    return '<td class="lv" data-l="' + f.key + '" data-g="' + key + '"><select data-lv="' + key + '" data-fi="' + fi + '" data-t="' + ti + '" aria-label="' + f.key + ' – ' + h(f.name) + '"' + (v || t.code ? '' : ' class="empty"') + '>' +
       '<option value="0">' + (t.code ? '– theo mã –' : '– chọn –') + '</option>' + opts(f.levels.map(function (l, i) { return [i + 1, (i + 1) + ' · ' + l[0]]; }), v) + '</select></td>';
   }
   function calcCells(t, key) {
     var c = cK(t, key);
-    return '<td class="num calc" data-calc="' + key + 'S">' + calcPart(t, key, c, 'S') + '</td><td class="center calc" data-calc="' + key + 'N">' + calcPart(t, key, c, 'N') +
-      '</td><td class="num calc" data-calc="' + key + 'P">' + calcPart(t, key, c, 'P') + '</td>';
+    var who = key === 'm' ? ' (LĐ)' : '';
+    return '<td class="num calc" data-l="S' + who + '" data-calc="' + key + 'S">' + calcPart(t, key, c, 'S') + '</td><td class="center calc" data-l="Mức N' + who + '" data-calc="' + key + 'N">' + calcPart(t, key, c, 'N') +
+      '</td><td class="num calc" data-l="Điểm' + who + '" data-calc="' + key + 'P">' + calcPart(t, key, c, 'P') + '</td>';
   }
   /** Nội dung ô S, N, điểm của một dòng. Việc trong danh mục: ô N ghi mức N của mã (khối tự kê) hoặc hệ số tổng hợp (khối lãnh đạo). */
   function calcPart(t, key, c, part) {
@@ -665,7 +690,7 @@
       (pc ? '<span class="badge b-purple">Kỳ trước chấm ' + pc.n + ' · ' + fmt(pc.point) + 'đ</span>' : '');
     name += (edit && !t.isNew ? '<label class="chk small no-print"><input type="checkbox" data-fld="repeat" data-t="' + ti + '"' + (t.repeat ? ' checked' : '') + '>Việc lặp lại: tự đưa sang kỳ sau</label>' : '') + (tags ? '<div class="tags">' + tags + '</div>' : '') +
       (!mgr && t.note ? '<div class="mnote"><b>Nhận xét của người phụ trách:</b> ' + h(t.note) + '</div>' : '') + // người tự chấm thấy nhận xét ngay tại công việc
-      extraHtml(t, ti, edit && !t.isNew);
+      extraHtml(t, ti, edit && !t.isNew) + flowHtml(t, ti);
     var cells = '<td class="center c-tt">' + (mgr ? '<label class="pick1"><input type="checkbox" data-sel="' + h(t.id) + '"' + (E.sel[t.id] ? ' checked' : '') + ' aria-label="Chọn công việc ' + (ti + 1) + '"><span>' + (ti + 1) + '</span></label>' : (ti + 1)) + '</td><td class="c-name">' + name + '</td>' +
       (edit ? (t.code ? '<td>' + h(t.product) + '</td>' : '<td><select data-fld="product" data-t="' + ti + '" aria-label="Sản phẩm">' + opts(M.products.map(function (x) { return [x, x]; }), t.product) + '</select></td>') +
         '<td><input type="number" min="0.01" step="any" data-fld="qty" data-t="' + ti + '" value="' + h(t.qty) + '" aria-label="Số lượng sản phẩm">' + (t.code && t.unit ? '<div class="muted small">' + h(t.unit) + '</div>' : '') + '</td>' +
@@ -981,6 +1006,7 @@
           ['phone', 'Số điện thoại', 'text'], ['email', 'Email', 'text'],
           ['level', 'Cấp trong cây phụ trách', 'select', Object.keys(LEVEL).map(function (k) { return [k, LEVEL[k]]; })],
           ['managerId', 'Người phụ trách đánh giá (cấp phó trở lên)', 'select', managerOpts(cur.id)],
+          ['extra', 'Quản lý vượt cấp: số CCCD của người ngoài cây phụ trách vẫn được giao việc, đánh giá cán bộ này (nhiều người cách nhau dấu phẩy; chỉ dùng trường hợp đặc biệt)', 'text'],
           ['selfEval', 'Tự kê công việc và tự đánh giá (trưởng đơn vị, thủ trưởng thường không chọn)', 'check'], ['isAdmin', 'Có quyền quản trị hệ thống', 'check'],
           ['isStaff', 'Tham mưu tổng hợp xếp loại (thấy bảng xếp loại toàn cơ quan, nhập tiêu chí chung, trình biểu quyết, chốt)', 'check'],
           ['isVoter', 'Thành viên tập thể lãnh đạo biểu quyết xếp loại', 'check'], ['active', 'Đang hoạt động', 'check']];
@@ -1147,6 +1173,7 @@
   var ACT = {
     logout: function () { logout(); },
     toggleSide: function () { // ẩn/hiện bảng bên trái, nhớ lựa chọn cho lần sau
+      if (window.matchMedia('(max-width: 860px)').matches) { var m = $('.shell'); if (m) m.classList.toggle('nav-open'); return; } // điện thoại: mở/đóng menu trượt
       var off = !sideOff();
       try { localStorage.setItem('kpi_side', off ? 'off' : 'on'); } catch (e) { /* không lưu được thì chỉ đổi trong phiên này */ }
       var sh = $('.shell');
@@ -1397,6 +1424,93 @@
     if (mine && t.locked && t.mBy && t.mBy !== S.user.id && d.period.phase !== 'khoa') out += '<div class="no-print" style="margin-top:6px"><button type="button" class="btn sm" data-act="fbOpen" data-t="' + ti + '">' + (t.fb ? 'Sửa phản hồi' : 'Phản hồi không tán thành') + '</button></div>';
     return out;
   }
+  /* ---------- Giao – nhận nhiệm vụ: trạng thái từng việc, xác nhận, phản hồi, giao lại, gia hạn, giao nối tiếp ---------- */
+  var MYT = { key: '', tasks: [] }; // các việc của chính người đang đăng nhập ở kỳ này, để chọn làm nhiệm vụ nguồn khi giao nối tiếp
+  function loadMyTasks() {
+    var key = S.periodId + '|' + S.user.id;
+    if (MYT.key === key || !S.user.selfEval) return;
+    MYT = { key: key, tasks: [] };
+    API.call('getEvaluation', { periodId: S.periodId }).then(function (d) {
+      if (MYT.key !== key) return;
+      MYT.tasks = ((d.ev || {}).tasks || []).map(function (t) { return { id: t.id, name: t.name }; });
+      if (E && E.canMgr && E.tasks.some(function (t) { return t.isNew; })) redrawTable();
+    }, function () { /* không lấy được thì bỏ qua phần giao nối tiếp */ });
+  }
+  function flowHtml(t, ti) {
+    var d = E.d, x = t.x || {}, mine = d.owner.id === S.user.id, boss = E.canMgr, open = d.period.phase !== 'khoa', out = '', chips = '', st = null;
+    if (t.isNew) {
+      if (boss && MYT.tasks.length) out += '<div class="tx no-print"><label style="flex:1 1 100%">Giao nối tiếp từ nhiệm vụ của tôi (không bắt buộc)<select data-fld="src" data-t="' + ti + '"><option value="">– không nối tiếp –</option>' +
+        opts(MYT.tasks.map(function (m) { return [m.id, m.name.slice(0, 90)]; }), t.src || '') + '</select></label></div>';
+      return out;
+    }
+    if (!t.locked) {
+      if (x.acc === 'cho') st = ['Chờ xác nhận', 'b-amber'];
+      else if (x.acc === 'fb') st = ['Đã phản hồi, chờ giao lại', 'b-amber'];
+      else if (t.note) st = ['Bị trả lại, cần sửa', 'b-amber'];
+      else if (d.ev.status === 'cho_duyet') st = ['Chờ đánh giá', 'b-blue'];
+      else if (x.acc === 'ok') st = ['Đã xác nhận', 'b-blue'];
+      else st = ['Nháp', 'b-gray'];
+      chips += '<span class="badge ' + st[1] + '">' + st[0] + '</span>';
+    }
+    if (x.src) chips += '<span class="badge b-purple" title="' + h(x.src.n || '') + '">Nối tiếp từ việc của người giao</span>';
+    if ((x.ext || []).length) { var last = x.ext[x.ext.length - 1]; chips += '<span class="badge b-gray" title="' + h(last.why || '') + '">Đã gia hạn ' + x.ext.length + ' lần' + (last.from ? ' (hạn cũ ' + h(fdate(last.from)) + ')' : '') + '</span>'; }
+    if (chips) out += '<div class="tags">' + chips + '</div>';
+    if (x.src && x.src.n) out += '<div class="muted small">Nhiệm vụ nguồn: ' + h(x.src.n) + '</div>';
+    if (x.fbNote) out += '<div class="mnote fb"><b>Cán bộ phản hồi nhiệm vụ chưa hợp lý' + (x.acc === 'fb' ? ' (chờ người giao xử lý)' : ' (đã giao lại)') + ':</b> ' + h(x.fbNote) + '</div>';
+    var btn = '';
+    if (mine && open && x.acc === 'cho') btn += '<button type="button" class="btn sm ok" data-act="taskOk" data-t="' + ti + '">Xác nhận nhiệm vụ</button>' +
+      (x.fbUsed ? '' : '<button type="button" class="btn sm warn" data-act="taskFb" data-t="' + ti + '">Phản hồi chưa hợp lý</button>');
+    if (boss && open) {
+      if (x.acc === 'fb') btn += '<button type="button" class="btn sm ok" data-act="taskRe" data-t="' + ti + '">Giao lại</button>';
+      if (!t.locked && t.by === S.user.id) btn += '<button type="button" class="btn sm danger" data-act="taskDrop" data-t="' + ti + '">Rút việc</button>';
+      if (!t.locked) btn += '<span class="ext"><input type="date" id="ext' + ti + '" min="' + h(t.deadline || '') + '" aria-label="Hạn hoàn thành mới"><button type="button" class="btn sm" data-act="taskExt" data-t="' + ti + '">Gia hạn</button></span>';
+    }
+    if (btn) out += '<div class="flow no-print">' + btn + '</div>';
+    return out;
+  }
+  function flowCall(el, action, extra, msg) {
+    var t = E.tasks[+el.dataset.t];
+    run(el, async function () {
+      setEval(await api(action, Object.assign({ periodId: S.periodId, userId: E.d.owner.id, taskId: t.id }, extra || {})));
+      S.ov = null; toast(msg);
+    });
+  }
+  ACT.taskOk = function (el) { flowCall(el, 'taskAccept', { ok: 1 }, 'Đã xác nhận nhiệm vụ.'); };
+  ACT.taskFb = function (el) {
+    var note = prompt('Lý do nhiệm vụ này chưa hợp lý (mỗi nhiệm vụ chỉ phản hồi được một lần):');
+    if (note === null) return;
+    if (!note.trim()) return toast('Hãy ghi lý do phản hồi.', true);
+    flowCall(el, 'taskAccept', { ok: 0, note: note.trim() }, 'Đã gửi phản hồi cho người giao việc.');
+  };
+  ACT.taskRe = function (el) { flowCall(el, 'taskReassign', {}, 'Đã giao lại; nhiệm vụ chuyển sang Đã xác nhận.'); };
+  ACT.taskDrop = function (el) { if (confirm('Rút công việc này khỏi phiếu của cán bộ?')) flowCall(el, 'taskReassign', { drop: 1 }, 'Đã rút công việc.'); };
+  ACT.taskExt = function (el) {
+    var v = ($('#ext' + el.dataset.t) || {}).value;
+    if (!v) return toast('Chọn hạn hoàn thành mới ở ô ngày bên cạnh rồi bấm Gia hạn.', true);
+    var why = prompt('Lý do gia hạn (không bắt buộc):');
+    if (why === null) return;
+    flowCall(el, 'taskExtend', { deadline: v, why: why.trim() }, 'Đã gia hạn đến ' + fdate(v) + '.');
+  };
+  ACT.evSrc = function (el) {
+    var ti = +el.dataset.t, t = E.tasks[ti];
+    run(el, async function () {
+      var r = await api('evidenceSources', { periodId: S.periodId, taskId: t.id }), box = $('#evSrcBox');
+      if (!box) return;
+      box.innerHTML = '<h3 style="margin:14px 0 6px">Việc đã được đánh giá của cấp dưới có tệp kết quả</h3>' + (r.items.length ? '<div class="tbl-wrap"><table class="tbl"><tbody>' + r.items.map(function (x) {
+        return '<tr><td><b>' + h(x.fullName) + '</b>' + (x.linked ? ' <span class="badge b-purple">nối tiếp từ việc này</span>' : '') + '<div class="small">' + h(x.name) + '</div><div class="muted small">' + x.files.map(function (f) { return '📎 ' + h(f.name); }).join(' · ') + '</div></td>' +
+          '<td class="right"><button class="btn sm primary" data-act="evBorrow" data-t="' + ti + '" data-u="' + h(x.userId) + '" data-k="' + h(x.taskId) + '">Lấy</button></td></tr>';
+      }).join('') + '</tbody></table></div>' : '<p class="muted">Chưa có việc nào của cấp dưới vừa được đánh giá vừa có tệp minh chứng ở kỳ này.</p>');
+    });
+  };
+  ACT.evBorrow = function (el) {
+    var ti = +el.dataset.t, t = E.tasks[ti];
+    run(el, async function () {
+      t.ev = (await api('evidenceBorrow', { periodId: S.periodId, taskId: t.id, fromUserId: el.dataset.u, fromTaskId: el.dataset.k })).items;
+      redrawTable(); evModal(ti);
+      toast('Đã lấy tệp kết quả của cấp dưới làm minh chứng.');
+    });
+  };
+
   /** Ô người phụ trách xác nhận khi chấm một việc. */
   function confirmHtml(t, ti) {
     var rl = E.d.rule || {}, maxB = rl.maxBonus || 5;
@@ -1417,7 +1531,9 @@
       }).join('') || '<tr><td class="muted">Chưa có minh chứng nào.</td></tr>') + '</tbody></table></div>' +
       (can && list.length < KPI_MAX_EVIDENCE ? '<label class="f" style="margin-top:12px"><span>Chọn tệp để tải lên (tối đa 10 MB)</span><input type="file" id="evFile"></label>' : '') +
       '<p class="muted small">Tệp được lưu trên Google Drive của cơ quan tại <b>KPIQTRI / ' + h(d.owner.id) + ' / ' + h(d.period.name.replace(/[\\\/]/g, '-')) + '</b>, tên tệp có mã minh chứng ở đầu. Mỗi công việc tối đa ' + KPI_MAX_EVIDENCE + ' minh chứng. Chỉ anh/chị, những người phụ trách phía trên và quản trị xem được.</p>' +
-      '<div class="actions"><button class="btn" data-act="closeModal">Đóng</button>' + (can && list.length < KPI_MAX_EVIDENCE ? '<button class="btn primary" data-act="evUpload" data-t="' + ti + '">Tải lên</button>' : '') + '</div></div>';
+      '<div id="evSrcBox"></div><div class="actions"><button class="btn" data-act="closeModal">Đóng</button>' +
+      (can && S.hasReports && list.length < KPI_MAX_EVIDENCE ? '<button class="btn" data-act="evSrc" data-t="' + ti + '">Lấy tệp kết quả của cấp dưới</button>' : '') +
+      (can && list.length < KPI_MAX_EVIDENCE ? '<button class="btn primary" data-act="evUpload" data-t="' + ti + '">Tải lên</button>' : '') + '</div></div>';
   }
   function readFile(file) {
     return new Promise(function (resolve, reject) {
@@ -2208,12 +2324,35 @@
       render();
     });
   });
+  // Điện thoại: chạm ra ngoài menu trượt thì đóng menu, không kích hoạt nút bên dưới.
+  document.addEventListener('click', function (ev) {
+    var sh = document.querySelector('.shell.nav-open');
+    if (!sh || ev.target.closest('.side') || ev.target.closest('.burger')) return;
+    sh.classList.remove('nav-open'); ev.preventDefault(); ev.stopPropagation();
+  }, true);
   window.addEventListener('hashchange', render);
 
   /* ---------- Khởi động ---------- */
   (async function start() {
     if (localStorage.getItem('kpi_token')) {
-      try { setBoot(await API.call('bootstrap')); } catch (e) { localStorage.removeItem('kpi_token'); }
+      var saved = null;
+      try { saved = JSON.parse(localStorage.getItem('kpi_boot') || 'null'); } catch (e) { saved = null; }
+      if (saved && saved.user) {
+        // Đã có thông tin lần trước: hiện trang ngay, rồi hỏi lại máy chủ ngầm.
+        setBoot(saved);
+        render();
+        API.call('bootstrap', { pre: 1, periodId: S.periodId }).then(function (b) {
+          var same = JSON.stringify(Object.assign({}, b, { pre: 0 })) === JSON.stringify(Object.assign({}, saved, { pre: 0 }));
+          var ov = S.ov, st = S.st, key = S.ovKey, before = JSON.stringify([S.ov, S.st]);
+          setBoot(b);
+          if (!S.ov && ov && key === S.periodId) { S.ov = ov; S.ovKey = key; }
+          if (!S.st) S.st = st;
+          if (!same) { var r = location.hash.replace(/^#\/?/, '').split('/')[0]; if (r !== 'tudanhgia' && r !== 'phieu') render(); }
+          else if (JSON.stringify([S.ov, S.st]) !== before) redrawIfList();
+        }).catch(function (e) { if (e.code === 'AUTH') logout(); });
+        return;
+      }
+      try { setBoot(await API.call('bootstrap', { pre: 1 })); } catch (e) { localStorage.removeItem('kpi_token'); }
     }
     render();
   })();

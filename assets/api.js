@@ -15,6 +15,8 @@ window.KPI_API = (function () {
     var fresh = !db;
     if (fresh) db = {};
     Object.keys(KPI_TABLES).forEach(function (t) { if (!db[t]) db[t] = []; });
+    if (!db._log) db._log = []; if (!db._logSum) db._logSum = []; // nhật ký sử dụng khi chạy thử
+    var seen = {};
     function save() { try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch (e) { /* bỏ qua */ } }
     var store = {
       all: function (t) { return db[t]; },
@@ -36,6 +38,16 @@ window.KPI_API = (function () {
       }
     };
     var env = {
+      locked: true,
+      usage: {
+        add: function (row) { db._log.push(row.map(String)); save(); },
+        head: function () { return { count: db._log.length, first: db._log.length ? db._log[0][0] : '' }; },
+        rows: function () { return db._log; },
+        drop: function (n) { db._log.splice(0, n); save(); },
+        sums: function () { return db._logSum; },
+        setSums: function (rows) { db._logSum = rows; save(); },
+        once: function (key, seconds) { var now = Date.now(); if (seen[key] && seen[key] > now) return false; seen[key] = now + seconds * 1000; return true; }
+      },
       hash: function (s) { // băm đơn giản, chỉ dùng khi chạy thử trên máy
         var h1 = 0x811c9dc5, h2 = 0x1b873593;
         for (var i = 0; i < s.length; i++) {

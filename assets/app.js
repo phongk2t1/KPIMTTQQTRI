@@ -116,7 +116,7 @@
     if (u.selfEval) items.push(['tudanhgia', 'Tự đánh giá']);
     if (S.hasReports) items.push(['duyet', 'Đánh giá cấp dưới']);
     if (S.hasReports || u.isAdmin) items.push(['baocao', 'KPI tổng hợp']);
-    if (S.hasReports || u.isAdmin || u.isStaff || u.isVoter) items.push(['xeploai', 'Xếp loại']);
+    if ((S.config.rule || {}).useRating && (S.hasReports || u.isAdmin || u.isStaff || u.isVoter)) items.push(['xeploai', 'Xếp loại']);
     items.push(['tieuchi', 'Bảng tiêu chí']);
     if (u.isAdmin) items.push(['quantri', 'Quản trị']);
     items.push(['matkhau', 'Đổi mật khẩu']);
@@ -748,7 +748,7 @@
     var guide = p.canEdit ? '<details class="card guide no-print"' + (E.tasks.length <= 1 ? ' open' : '') + '><summary>Cách ghi phiếu' + (d.period.deadline ? ' · hạn chốt nhập <b>' + fdate(d.period.deadline) + '</b>' : '') + '</summary>' +
       '<ul><li><b>Tên công việc:</b> ' + h(HINT_NAME) + '</li><li><b>Số lượng sản phẩm:</b> ' + h(HINT_QTY) + '</li>' +
       '<li><b>Danh mục sản phẩm:</b> chọn loại sản phẩm (ví dụ Công văn), bấm <b>Thêm</b> ở sản phẩm đúng với việc đã làm, hoặc tích nhiều sản phẩm rồi bấm “Thêm các sản phẩm đã tích”. Điểm giao chuẩn = điểm chuẩn của mã × số lượng; người phụ trách xác nhận hệ số H (khối lượng), Q (chất lượng), T (tiến độ).</li>' +
-      '<li><b>A, B, C, D, E:</b> với việc trong danh mục thì để trống (điểm theo mã); chỉ chọn đủ 5 mức khi muốn điều chỉnh điểm của việc đó. Với việc ngoài danh mục: chọn mức phù hợp cho từng công việc; S, mức N và điểm của N tự tính. Xem giải thích từng mức ở <a href="#/tieuchi">Bảng tiêu chí</a>.</li></ul></details>' : '';
+      '<li><b>A, B, C, D, E:</b> với việc trong danh mục thì để trống (điểm theo mã); chọn đủ 5 mức là đề xuất điều chỉnh định mức, chỉ có hiệu lực khi lãnh đạo chọn A–E ở khối đánh giá. Với việc ngoài danh mục: chọn mức phù hợp cho từng công việc; S, mức N và điểm của N tự tính. Xem giải thích từng mức ở <a href="#/tieuchi">Bảng tiêu chí</a>.</li></ul></details>' : '';
     function commentBox(id, label, value, editable, placeholder) {
       if (editable) return '<label class="f"><span>' + label + '</span><textarea id="' + id + '" rows="2" placeholder="' + placeholder + '">' + h(value) + '</textarea></label>';
       return value ? '<p><b>' + label + ':</b> ' + h(value) + '</p>' : '';
@@ -1059,7 +1059,8 @@
         '</tbody></table><p class="muted small">Để trống nếu cơ quan chưa quy định xếp loại. Nếu đặt: mức thấp nhất luôn tính từ 0 điểm; xoá tên để bỏ một mức.</p>' +
         '<h3 style="margin:16px 0 8px">Ngưỡng xếp loại chất lượng theo kỳ</h3>' + [['quota', 'Số người xuất sắc không quá bao nhiêu % số người từ “Hoàn thành tốt” trở lên'], ['minScore', 'Tổng điểm (thang 100) tối thiểu để xét xuất sắc'],
           ['minOver', 'Tỷ lệ % nhiệm vụ vượt mức tối thiểu để xét xuất sắc'], ['common', 'Điểm tối đa của nhóm tiêu chí chung (phần còn lại của thang 100 là kết quả nhiệm vụ)'], ['maxBonus', 'Điểm thưởng tối đa của một công việc (% điểm công việc đó)'],
-          ['wH', 'Tỷ trọng khối lượng (H) trong điểm thực đạt P = G × H × (wH + wQ×Q + wT×T) / (wH + wQ + wT)'], ['wQ', 'Tỷ trọng chất lượng (Q); ví dụ 1-1-1 là chia đều, 25-50-25 là ưu tiên chất lượng'], ['wT', 'Tỷ trọng tiến độ (T)']]
+          ['wH', 'Tỷ trọng khối lượng (H) trong điểm thực đạt P = G × H × (wH + wQ×Q + wT×T) / (wH + wQ + wT)'], ['wQ', 'Tỷ trọng chất lượng (Q); ví dụ 1-1-1 là chia đều, 25-50-25 là ưu tiên chất lượng'], ['wT', 'Tỷ trọng tiến độ (T)'],
+          ['useBonus', 'Điểm thưởng: 1 = bật, 0 = tắt (thí điểm theo Báo cáo của Tổ giúp việc KPI: tắt)'], ['useRating', 'Trang xếp loại chất lượng theo kỳ: 1 = bật, 0 = tắt (thí điểm: tắt)']]
           .map(function (x) { return '<label class="f"><span>' + x[1] + '</span><input type="number" min="0" max="100" step="any" data-rule="' + x[0] + '" value="' + h((S.config.rule || {})[x[0]]) + '"></label>'; }).join('') +
         '<button class="btn primary" data-act="saveConfig">Lưu cấu hình</button></div>';
     }
@@ -1370,7 +1371,7 @@
       out += '<div class="tx no-print"><label>Hạn hoàn thành<input type="date" data-fld="deadline" data-t="' + ti + '" value="' + h(t.deadline || '') + '"></label>' +
         '<label>Ngày hoàn thành<input type="date" data-fld="doneDate" data-t="' + ti + '" value="' + h(t.doneDate || '') + '"></label>' +
         '<label>Tiến độ (%)<input type="number" min="0" max="100" step="1" data-fld="progress" data-t="' + ti + '" value="' + h(t.progress == null ? '' : t.progress) + '" placeholder="100"></label>' +
-        '<label>Điểm thưởng đề xuất (%)<input type="number" min="0" max="' + maxB + '" step="0.5" data-fld="bonus" data-t="' + ti + '" value="' + h(t.bonus || '') + '" placeholder="0"></label>' +
+        ((d.rule || {}).useBonus ? '<label>Điểm thưởng đề xuất (%)<input type="number" min="0" max="' + maxB + '" step="0.5" data-fld="bonus" data-t="' + ti + '" value="' + h(t.bonus || '') + '" placeholder="0"></label>' : '') +
         (d.canUpload ? '<button type="button" class="btn sm" data-act="evOpen" data-t="' + ti + '">📎 Minh chứng (' + (t.ev || []).length + '/' + KPI_MAX_EVIDENCE + ')</button>' : '') + '</div>';
     }
     var chips = '';
@@ -1382,7 +1383,7 @@
     }
     if (t.locked && cK(t, 'm')) {
       if (t.mProgress != null && Number(t.mProgress) < 100) chips += '<span class="badge b-amber">Xác nhận hoàn thành ' + h(t.mProgress) + '%</span>';
-      if (t.ot && t.oq) chips += '<span class="badge b-green">★ Vượt mức</span>';
+      if (!(d.rule || {}).useRating) { /* thí điểm: không xét vượt mức */ } else if (t.ot && t.oq) chips += '<span class="badge b-green">★ Vượt mức</span>';
       else if (t.ot) chips += '<span class="badge b-blue">Vượt tiến độ</span>';
       else if (t.oq) chips += '<span class="badge b-blue">Vượt chất lượng</span>';
       if (Number(t.mBonus)) chips += '<span class="badge b-green">Thưởng +' + fmt(t.mBonus) + '%</span>';
@@ -1395,12 +1396,12 @@
   }
   /** Ô người phụ trách xác nhận khi chấm một việc. */
   function confirmHtml(t, ti) {
-    var maxB = (E.d.rule || {}).maxBonus || 5;
+    var rl = E.d.rule || {}, maxB = rl.maxBonus || 5;
     return '<div class="tx mg"><label>Tiến độ xác nhận (%)<input type="number" min="0" max="100" step="1" data-fld="mProgress" data-t="' + ti + '" value="' + h(t.mProgress == null ? 100 : t.mProgress) + '"></label>' +
       '<label>Ngày hoàn thành<input type="date" data-fld="mDone" data-t="' + ti + '" value="' + h(t.mDone || '') + '"></label>' +
-      '<label>Điểm thưởng (%)<input type="number" min="0" max="' + maxB + '" step="0.5" data-fld="mBonus" data-t="' + ti + '" value="' + h(t.mBonus || 0) + '"></label>' +
-      '<label class="ck"><input type="checkbox" data-fld="ot" data-t="' + ti + '"' + (t.ot ? ' checked' : '') + '>Vượt tiến độ</label>' +
-      '<label class="ck"><input type="checkbox" data-fld="oq" data-t="' + ti + '"' + (t.oq ? ' checked' : '') + '>Vượt chất lượng</label></div>';
+      (rl.useBonus ? '<label>Điểm thưởng (%)<input type="number" min="0" max="' + maxB + '" step="0.5" data-fld="mBonus" data-t="' + ti + '" value="' + h(t.mBonus || 0) + '"></label>' : '') +
+      (rl.useRating ? '<label class="ck"><input type="checkbox" data-fld="ot" data-t="' + ti + '"' + (t.ot ? ' checked' : '') + '>Vượt tiến độ</label>' +
+      '<label class="ck"><input type="checkbox" data-fld="oq" data-t="' + ti + '"' + (t.oq ? ' checked' : '') + '>Vượt chất lượng</label>' : '') + '</div>';
   }
 
   /* ---------- Minh chứng ---------- */
@@ -1840,8 +1841,11 @@
   /** Dòng tính điểm của việc trong danh mục: G theo điểm chuẩn (hoặc theo A–E nếu đã điều chỉnh), và P sau khi người phụ trách xác nhận. */
   function gText(t) {
     var q = Number(t.qty) || 0, s = cK(t, 's'), m = cK(t, 'm'), r = function (x) { return f4(Math.round(x * 1e4) / 1e4); };
-    var out = 'Điểm giao chuẩn G = ' + f4(s.point) + ' × ' + fmt(q) + ' = <b>' + r(s.point * q) + '</b>' + (s.adj ? ' (đã điều chỉnh theo A–E: ' + h(s.n) + ' thay cho ' + h(t.n) + ')' : '');
-    if (m) out += '<br>Xác nhận: H <b>' + fmt(t.H) + '</b> · Q <b>' + fmt(t.Q) + '</b> · T <b>' + fmt(t.T) + '</b>' + (m.adj && m.base !== s.point ? ' · lãnh đạo điều chỉnh A–E: ' + h(m.n) + ' (' + f4(m.base) + ' điểm)' : '') +
+    var g = m ? m.base : s.point;
+    var out = 'Điểm giao chuẩn G = ' + f4(g) + ' × ' + fmt(q) + ' = <b>' + r(g * q) + '</b>' +
+      (m && m.adj ? ' (lãnh đạo điều chỉnh định mức theo A–E: ' + h(m.n) + ' thay cho ' + h(t.n) + ')' :
+        s.prop ? '<br><span class="muted">Cán bộ đề xuất điều chỉnh theo A–E: ' + h(s.prop.n) + ' (' + f4(s.prop.point) + ' điểm) – chỉ có hiệu lực khi lãnh đạo chọn A–E ở khối đánh giá.</span>' : '');
+    if (m) out += '<br>Xác nhận: H <b>' + fmt(t.H) + '</b> · Q <b>' + fmt(t.Q) + '</b> · T <b>' + fmt(t.T) + '</b>' +
       ' → điểm thực đạt P = <b>' + r(m.point * q * (1 + (Number(t.mBonus) || 0) / 100)) + '</b>';
     return out;
   }
@@ -1863,7 +1867,7 @@
     E.tasks.forEach(function (t) {
       var q = Number(t.qty) || 0, s = cK(t, 's'), m = t.locked ? cK(t, 'm') : null;
       hours += q * (t.code ? Number(t.hours) || 0 : s ? s.point * 4 : 0);
-      if (m && s) { G += q * s.point; P += q * m.point * (1 + (Number(t.mBonus) || 0) / 100); }
+      if (m && s) { G += q * (t.code ? m.base : s.point); P += q * m.point * (1 + (Number(t.mBonus) || 0) / 100); }
     });
     set('kG', f4(Math.round(G * 10000) / 10000)); set('kP', f4(Math.round(P * 10000) / 10000));
     set('kPct', G ? fmt(P / G * 100) + '%' : '–'); set('kH', fmt(hours) + ' giờ');

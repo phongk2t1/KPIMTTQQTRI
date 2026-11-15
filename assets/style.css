@@ -264,3 +264,12 @@ ul.tree > li { border-left-color: var(--pri); }
 .tbl.rate select, .tbl.rate input[type=number] { padding: 3px 6px; font-size: 13px; min-width: 0; }
 .tbl.rate input[type=number] { width: 70px; }
 @media print { .lib, .sheet .tx { display: none !important; } }
+
+/* Danh mục sản phẩm, hệ số H-Q-T */
+.lib-top select { min-width: 220px; max-width: 320px; }
+.pick.cat label { align-items: flex-start; } .pick.cat label > span { flex: 1; } .pick.cat label > button { flex: none; align-self: center; }
+.sheet td.lv.cat { white-space: normal; min-width: 260px; font-size: 13px; background: #f8fbff; }
+.sheet .hqt { display: flex; flex-wrap: wrap; gap: 6px; }
+.sheet .hqt label { display: flex; align-items: center; gap: 4px; font-weight: 700; font-size: 12px; }
+.sheet .hqt select { max-width: 150px; padding: 3px 4px; font-size: 12px; }
+.sheet span.n { white-space: nowrap; }

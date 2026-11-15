@@ -109,7 +109,7 @@ var KPI_RULE = {
   maxBonus: 5,   // điểm thưởng tối đa của một công việc, tính bằng % điểm công việc đó
   wH: 1, wQ: 1, wT: 1, // tỷ trọng khối lượng, chất lượng, tiến độ trong điểm thực đạt (1-1-1 là chia đều 33,33%)
   useBonus: 0,  // 1 = áp dụng điểm thưởng; 0 = tắt (Báo cáo thí điểm: chưa áp dụng điểm thưởng khi chưa được Ban Thường trực quyết định)
-  useRating: 0  // 1 = mở trang xếp loại chất lượng theo kỳ; 0 = tắt (thí điểm: chưa dùng KPI làm căn cứ xếp loại)
+  useRating: 1  // 1 = mở trang xếp loại chất lượng theo kỳ (đề xuất, tham mưu, tập thể biểu quyết, quyết định); 0 = tắt
 };
 /* Hệ số đánh giá kết quả thực hiện một nhiệm vụ lấy từ Danh mục sản phẩm (Báo cáo đề xuất thí điểm KPI của Tổ giúp việc):
  * điểm giao chuẩn G = điểm chuẩn của mã × số lượng; điểm thực đạt P = G × H × (wH + wQ×Q + wT×T) / (wH + wQ + wT). */
@@ -153,6 +153,7 @@ var KPI_LOG_ACTIONS = {
   tasksFrom: ['xem', 'Lấy việc từ kỳ trước'], saveSelf: ['sua', 'Lưu / nộp phiếu tự đánh giá'], review: ['sua', 'Duyệt / trả lại phiếu'],
   score: ['sua', 'Chấm điểm, nhận xét, giao việc'], reopen: ['sua', 'Mở lại phiếu đã chốt'], upload: ['them', 'Tải tệp lên'],
   feedback: ['sua', 'Phản hồi không tán thành'], taskAccept: ['sua', 'Xác nhận / phản hồi nhiệm vụ được giao'], taskReassign: ['sua', 'Giao lại / rút nhiệm vụ'], taskExtend: ['sua', 'Gia hạn nhiệm vụ'],
+  assignBoard: ['xem', 'Xem trang Giao việc'], assignMany: ['them', 'Giao việc cho nhiều người'],
   evidenceSources: ['xem', 'Xem tệp kết quả của cấp dưới'], evidenceBorrow: ['them', 'Lấy tệp kết quả của cấp dưới'], evidenceAdd: ['them', 'Thêm minh chứng'], evidenceRemove: ['xoa', 'Xoá minh chứng'], evidenceGet: ['xem', 'Mở minh chứng'],
   catalog: ['xem', 'Xem danh mục sản phẩm'], adminCatalogSave: ['sua', 'Thêm / sửa mã danh mục'], adminCatalogDelete: ['xoa', 'Xoá mã danh mục'], adminCatalogImport: ['them', 'Nạp danh mục từ Excel'],
   libraryFind: ['xem', 'Tìm trong kho việc mẫu'], adminLibraryList: ['xem', 'Xem kho việc mẫu'], adminLibrarySave: ['sua', 'Thêm / sửa việc mẫu'], adminLibraryDelete: ['xoa', 'Xoá việc mẫu'], adminLibraryImport: ['them', 'Nạp kho việc mẫu từ Excel'],
@@ -330,6 +331,21 @@ function KPI_createCore(store, env) {
   function extraOf(u) { return str(u.extra).split(/[,;\s]+/).map(function (x) { return x.trim(); }).filter(Boolean); }
   function isBoss(me, owner) { return str(owner.managerId) === str(me.id) || extraOf(owner).indexOf(str(me.id)) >= 0; }
   function extraIds(me) { var o = {}; store.all('Users').forEach(function (u) { if (on(u.active) && extraOf(u).indexOf(str(me.id)) >= 0) o[str(u.id)] = true; }); return o; }
+  /** Đơn vị unitId có nằm trong đơn vị rootId (chính nó hoặc đơn vị con, cháu) không. */
+  function unitWithin(unitId, rootId) {
+    var by = {}; store.all('Units').forEach(function (u) { by[str(u.id)] = u; });
+    for (var cur = str(unitId), g = 0; cur && g < 20; g++) { if (cur === str(rootId)) return true; cur = by[cur] ? str(by[cur].parentId) : ''; }
+    return false;
+  }
+  /** Ai được giao việc cho ai: người phụ trách trực tiếp và quản lý vượt cấp; mọi cấp trên trong cây phụ trách; Trưởng, Phó đơn vị với người cấp thấp hơn
+   *  trong đơn vị mình và các đơn vị con, kể cả Trưởng đơn vị con. Người giao việc là người xác nhận kết quả việc mình giao (Báo cáo thí điểm KPI, mục III.2). */
+  function canAssign(me, owner) {
+    if (str(me.id) === str(owner.id) || !on(owner.active)) return false;
+    if (isBoss(me, owner) || subtreeIds(me.id, reportsMap())[str(owner.id)]) return true;
+    var rm = rank(me), ro = rank(owner);
+    if (rm > KPI_LEVELS.pho.rank || !str(me.unitId) || !unitWithin(owner.unitId, me.unitId)) return false;
+    return rm < ro || (ro === KPI_LEVELS.truong.rank && str(owner.unitId) !== str(me.unitId));
+  }
   function pub(u, full) {
     var o = {
       id: str(u.id), unitId: str(u.unitId), fullName: str(u.fullName), title: str(u.title), level: str(u.level) || 'canbo',
@@ -386,7 +402,7 @@ function KPI_createCore(store, env) {
   }
   function canView(me, owner, map) {
     if (str(me.id) === str(owner.id) || on(me.isAdmin) || extraOf(owner).indexOf(str(me.id)) >= 0) return true;
-    return !!subtreeIds(me.id, map || reportsMap())[str(owner.id)];
+    return !!subtreeIds(me.id, map || reportsMap())[str(owner.id)] || canAssign(me, owner);
   }
 
   /* ---------- Công việc, tính điểm ---------- */
@@ -575,7 +591,7 @@ function KPI_createCore(store, env) {
   function perms(me, ev, owner, period) {
     var ph = phaseOf(period), open = ph !== 'khoa', input = ph === 'mo';
     var st = ev ? str(ev.status) : 'chua_lap';
-    var self = str(me.id) === str(owner.id), mine = !self && isBoss(me, owner);
+    var self = str(me.id) === str(owner.id), mine = !self && isBoss(me, owner), asg = !self && !mine && canAssign(me, owner);
     var canSelf = self && on(owner.selfEval);
     var selfScore = canSelf && rank(owner) <= KPI_LEVELS.truong.rank; // trưởng đơn vị, thủ trưởng: tự chấm cho mình, mức tự chọn là kết quả
     return {
@@ -585,7 +601,8 @@ function KPI_createCore(store, env) {
       addOnly: canSelf && !selfScore && input && st === 'da_chot', // phiếu đã chấm: chỉ được bổ sung việc mới
       canReview: open && mine && st === 'cho_duyet',
       // người phụ trách trực tiếp: chấm từng việc, ghi nhận xét, thêm việc cho cấp dưới ở mọi trạng thái phiếu khi kỳ chưa khoá
-      canScore: open && mine && on(owner.selfEval),
+      canScore: open && (mine || asg) && on(owner.selfEval),
+      limited: asg, // cấp trên không trực tiếp phụ trách: chỉ giao việc và xác nhận việc do chính mình giao
       canRedo: open && mine && st === 'da_chot',     // người phụ trách cho cán bộ đánh giá lại
       canReopen: open && on(me.isAdmin) && st === 'da_chot'
     };
@@ -672,7 +689,8 @@ function KPI_createCore(store, env) {
       units: unitsFor(me).map(function (u) { return { id: str(u.id), name: str(u.name), parentId: str(u.parentId), order: num(u.order) }; }),
       periods: store.all('Periods').slice().sort(function (a, b) { return str(b.startDate).localeCompare(str(a.startDate)); }).map(periodOut),
       config: publicConfig(),
-      canUpload: !!env.evidence
+      canUpload: !!env.evidence,
+      canAssign: rank(me) <= KPI_LEVELS.pho.rank || !!(reportsMap()[str(me.id)] || []).length || !!Object.keys(extraIds(me)).length
     };
   };
 
@@ -938,10 +956,12 @@ function KPI_createCore(store, env) {
       err(phaseOf(period) === 'khoa' ? 'Kỳ đánh giá đã khoá.' : 'Chỉ người phụ trách trực tiếp hoặc quản lý vượt cấp mới chấm điểm được cho cán bộ này.');
     }
     var tasks = ev ? loadTasks(ev.id) : [], byId = {}, at = stamp(), unlock = d.mode === 'note', assign = d.mode === 'assign', n = 0, added = 0, catMap = catalogMap();
+    var lim = perms(me, ev, owner, period).limited;
     tasks.forEach(function (t) { byId[t.id] = t; });
     (Array.isArray(d.tasks) ? d.tasks : []).slice(0, 400).forEach(function (x) {
       x = x || {};
       var t = byId[str(x.id)], note = cut(x.note, 1000);
+      if (t && lim && str(t.by) !== str(me.id)) err('Anh/chị chỉ xác nhận được công việc do chính mình giao; các việc khác do người phụ trách trực tiếp của cán bộ đánh giá.');
       if (!t) {
         if (!x.isNew || unlock) return;
         t = cleanTask({ code: x.code, name: x.name, product: x.product, qty: x.qty, month: x.month, deadline: x.deadline }, period, catMap);
@@ -1097,9 +1117,11 @@ function KPI_createCore(store, env) {
     var period = needPeriod(d.periodId);
     if (phaseOf(period) === 'khoa') err('Kỳ đánh giá đã khoá.');
     var owner = find('Users', d.userId) || err('Không tìm thấy cán bộ.');
-    if (!isBoss(me, owner)) err('Chỉ người phụ trách trực tiếp hoặc quản lý vượt cấp mới thực hiện được.');
+    var boss = isBoss(me, owner);
+    if (!boss && !canAssign(me, owner)) err('Chỉ cấp trên của cán bộ mới thực hiện được.');
     var ev = evalOf(period.id, owner.id) || err('Cán bộ chưa có phiếu ở kỳ này.');
     var tasks = loadTasks(ev.id), t = tasks.filter(function (x) { return x.id === str(d.taskId); })[0] || err('Không tìm thấy công việc.');
+    if (!boss && str(t.by) !== str(me.id)) err('Anh/chị chỉ thao tác được với công việc do chính mình giao.');
     return { period: period, ev: ev, tasks: tasks, t: t, owner: owner };
   }
   function saveTaskSet(c, me, action, note) {
@@ -1144,6 +1166,42 @@ function KPI_createCore(store, env) {
     t.x = x; t.deadline = to;
     return saveTaskSet(c, me, 'Gia hạn nhiệm vụ', '“' + t.name.slice(0, 80) + '” đến ' + to.split('-').reverse().join('/') + (cut(d.why, 300) ? ': ' + cut(d.why, 300) : ''));
   };
+  /** Trang Giao việc: những người được giao việc, các việc mình đã giao và các việc mình được giao trong kỳ, kèm tiến độ để cảnh báo. */
+  A.assignBoard = function (me, d) {
+    var period = needPeriod(d.periodId), names = {}, evs = {}, lock = {}, tasks = [];
+    var users = store.all('Users').filter(function (u) { return on(u.active); });
+    users.forEach(function (u) { names[str(u.id)] = str(u.fullName); });
+    store.all('Evaluations').forEach(function (e) { if (str(e.periodId) === str(period.id)) evs[str(e.id)] = e; });
+    store.all('Reviews').forEach(function (r) { if (evs[str(r.evalId)]) lock[str(r.id)] = r; });
+    store.all('Tasks').forEach(function (r) {
+      var e = evs[str(r.evalId)];
+      if (!e || !str(r.by)) return;
+      var out = str(r.by) === str(me.id), inn = str(e.userId) === str(me.id);
+      if (!out && !inn) return;
+      var x = {}, L = lock[str(r.id)] || {}, locked = str(L.lock) === 'Khoá';
+      try { x = JSON.parse(str(r.meta) || '{}') || {}; } catch (err2) { x = {}; }
+      tasks.push({ dir: out ? 'out' : 'in', userId: str(e.userId), by: str(r.by), taskId: str(r.id), name: str(r.name), code: str(r.code), qty: num(r.qty) || 1, unit: str(r.unit),
+        deadline: str(r.deadline), doneDate: locked && str(L.doneDate) ? str(L.doneDate) : str(r.doneDate), progress: locked && str(L.progress) !== '' ? num(L.progress) : (str(r.progress) === '' ? null : num(r.progress)),
+        acc: str(x.acc), ext: Array.isArray(x.ext) ? x.ext.length : 0, src: !!x.src, locked: locked, h: locked ? str(L.h) : '', q: locked ? str(L.q) : '', t: locked ? str(L.t) : '',
+        score: locked ? num(L.score) : null, g: num(r.g), evStatus: str(e.status) });
+    });
+    return { today: nowVn().slice(0, 10), names: names, tasks: tasks,
+      people: users.filter(function (u) { return on(u.selfEval) && canAssign(me, u); }).map(function (u) { return pub(u); }) };
+  };
+  /** Giao cùng một việc cho nhiều người một lượt. Mỗi người một dòng kết quả; người lỗi không làm hỏng người khác. */
+  A.assignMany = function (me, d) {
+    var ids = (Array.isArray(d.userIds) ? d.userIds : []).map(str).filter(Boolean).slice(0, 60), k = d.task || {}, results = [];
+    if (!ids.length) err('Chưa chọn người nhận việc.');
+    if (!str(k.code) && !cut(k.name, 2000)) err('Chưa chọn mã sản phẩm hoặc ghi tên công việc.');
+    ids.forEach(function (id) {
+      try {
+        A.score(me, { periodId: d.periodId, userId: id, mode: 'assign', tasks: [{ isNew: true, code: k.code, name: k.name, product: k.product, qty: k.qty, month: k.month, deadline: k.deadline, src: k.src }] });
+        results.push({ userId: id, ok: true });
+      } catch (e) { if (!e.kpi) throw e; results.push({ userId: id, ok: false, error: e.message }); }
+    });
+    return { results: results };
+  };
+
   /** Việc đã được đánh giá của những người mình phụ trách (kỳ này) có minh chứng, để lấy làm minh chứng cho việc của mình. */
   A.evidenceSources = function (me, d) {
     var period = needPeriod(d.periodId), out = [], taskId = str(d.taskId);

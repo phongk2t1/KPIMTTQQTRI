@@ -1463,7 +1463,7 @@
   });
 
   /* ---------- Trang Giao việc: giao việc mới và theo dõi tiến độ, cảnh báo ---------- */
-  var GV = { d: null, lv: '', who: '', q: '', pick: {} };
+  var GV = { d: null, lv: '', who: '', q: '', pick: {}, by: '', unit: '' };
   var GV_LV = { late: ['Quá hạn', 'b-red'], soon: ['Sắp đến hạn', 'b-amber'], ok: ['Trong hạn', 'b-green'], nodl: ['Chưa đặt hạn', 'b-gray'], wait: ['Chờ xác nhận', 'b-amber'], fb: ['Có phản hồi', 'b-amber'], review: ['Chờ đánh giá', 'b-blue'], done: ['Đã đánh giá', 'b-green'] };
   function gvDays(a, b) { return Math.round((Date.parse(a + 'T00:00:00Z') - Date.parse(b + 'T00:00:00Z')) / 86400000); }
   /** Mức cảnh báo của một việc đã giao. */
@@ -1488,31 +1488,36 @@
     out.forEach(function (t) { t.lv = gvLevel(t); cnt[t.lv.k] = (cnt[t.lv.k] || 0) + 1; });
     inn.forEach(function (t) { t.lv = gvLevel(t); });
     var keys = ['late', 'soon', 'ok', 'nodl', 'wait', 'fb', 'review', 'done'], openN = out.length - (cnt.done || 0);
-    var tiles = '<div class="stats"><div class="stat hl"><div class="v">' + out.length + '</div><div class="l">Việc tôi đã giao trong kỳ</div><div class="x">' + openN + ' việc chưa đánh giá</div></div>' +
+    var tiles = '<div class="stats"><div class="stat hl"><div class="v">' + out.length + '</div><div class="l">' + (d.admin ? 'Việc đã giao toàn cơ quan trong kỳ' : 'Việc tôi đã giao trong kỳ') + '</div><div class="x">' + openN + ' việc chưa đánh giá</div></div>' +
       '<div class="stat s-none"><div class="v">' + (cnt.late || 0) + '</div><div class="l">Quá hạn</div></div><div class="stat"><div class="v">' + (cnt.soon || 0) + '</div><div class="l">Sắp đến hạn (trong 2 ngày)</div></div>' +
       '<div class="stat"><div class="v">' + ((cnt.wait || 0) + (cnt.fb || 0)) + '</div><div class="l">Chờ xác nhận / có phản hồi</div></div>' +
-      '<div class="stat"><div class="v">' + (cnt.review || 0) + '</div><div class="l">Đã báo xong, chờ tôi đánh giá</div></div><div class="stat s-done"><div class="v">' + (cnt.done || 0) + '</div><div class="l">Đã đánh giá</div></div></div>';
+      '<div class="stat"><div class="v">' + (cnt.review || 0) + '</div><div class="l">Đã báo xong, chờ đánh giá</div></div><div class="stat s-done"><div class="v">' + (cnt.done || 0) + '</div><div class="l">Đã đánh giá</div></div></div>';
     var chart = colsHtml(keys.map(function (k) { return { label: GV_LV[k][0], v: cnt[k] || 0, attrs: 'data-act="gvLv" data-k="' + k + '"', on: GV.lv === k, title: 'Bấm để lọc: ' + GV_LV[k][0] }; }));
     var people = {}; out.forEach(function (t) { people[t.userId] = d.names[t.userId] || t.userId; });
     var q = GV.q.trim().toLowerCase();
-    var rows = out.filter(function (t) { return (!GV.lv || t.lv.k === GV.lv) && (!GV.who || t.userId === GV.who) && (!q || (t.name + ' ' + t.code + ' ' + (d.names[t.userId] || '')).toLowerCase().indexOf(q) >= 0); })
+    var givers = {}; out.forEach(function (t) { givers[t.by] = d.names[t.by] || t.by; });
+    var uok = d.admin && GV.unit ? useUnitIds(GV.unit) : null;
+    var rows = out.filter(function (t) { return (!GV.lv || t.lv.k === GV.lv) && (!GV.who || t.userId === GV.who) && (!GV.by || t.by === GV.by) && (!uok || uok[d.unitOf[t.userId]]) && (!q || (t.name + ' ' + t.code + ' ' + (d.names[t.userId] || '')).toLowerCase().indexOf(q) >= 0); })
       .sort(function (a, b) { return keys.indexOf(a.lv.k) - keys.indexOf(b.lv.k) || (a.deadline || '9999').localeCompare(b.deadline || '9999'); });
     var bar = function (t) { var p = t.locked ? (t.progress == null ? 100 : t.progress) : t.progress == null ? (t.doneDate ? 100 : 0) : t.progress; return '<div class="gvbar"><i style="width:' + Math.max(0, Math.min(100, p)) + '%"></i></div><div class="muted small">' + p + '%' + (t.doneDate ? ' · xong ' + h(fdate(t.doneDate)) : '') + '</div>'; };
     var row = function (t, mineIn) {
       var who = mineIn ? (d.names[t.by] || t.by) : (d.names[t.userId] || t.userId);
-      return '<tr><td><b>' + h(who) + '</b></td><td>' + (t.code ? '<span class="badge b-gray">' + h(t.code) + '</span> ' : '') + h(t.name) + '<div class="muted small">Số lượng ' + fmt(t.qty) + (t.unit ? ' ' + h(t.unit) : '') + (t.src ? ' · nối tiếp' : '') + (t.ext ? ' · đã gia hạn ' + t.ext + ' lần' : '') + '</div></td>' +
+      return '<tr><td><b>' + h(who) + '</b>' + (d.admin && !mineIn ? '<div class="muted small">' + h(unitName(d.unitOf[t.userId]) || '') + '<br>Người giao: ' + h(d.names[t.by] || t.by) + '</div>' : '') + '</td><td>' + (t.code ? '<span class="badge b-gray">' + h(t.code) + '</span> ' : '') + h(t.name) + '<div class="muted small">Số lượng ' + fmt(t.qty) + (t.unit ? ' ' + h(t.unit) : '') + (t.src ? ' · nối tiếp' : '') + (t.ext ? ' · đã gia hạn ' + t.ext + ' lần' : '') + '</div></td>' +
         '<td class="nowrap">' + (t.deadline ? h(fdate(t.deadline)) : '<span class="muted">–</span>') + '</td><td style="min-width:120px">' + bar(t) + '</td>' +
         '<td><span class="badge ' + GV_LV[t.lv.k][1] + '">' + GV_LV[t.lv.k][0] + '</span>' + (t.lv.x ? '<div class="muted small">' + h(t.lv.x) + '</div>' : '') + '</td>' +
         '<td class="nowrap">' + (t.locked ? 'H ' + h(fmt(Number(t.h))) + ' · Q ' + h(fmt(Number(t.q))) + ' · T ' + h(fmt(Number(t.t))) + '<div class="small"><b>' + f4(t.score) + '</b> / ' + f4(t.g) + ' điểm</div>' : '<span class="muted">chưa chấm</span>') + '</td>' +
         '<td class="right no-print"><a class="btn sm' + (!mineIn && t.lv.k === 'review' ? ' primary' : '') + '" href="#/' + (mineIn ? 'tudanhgia' : 'phieu/' + encodeURIComponent(t.userId)) + '">' + (mineIn ? 'Mở phiếu của tôi' : t.locked ? 'Xem phiếu' : 'Mở phiếu để chấm') + '</a></td></tr>';
     };
     var head = function (c) { return '<thead><tr><th>' + c + '</th><th>Công việc</th><th>Hạn</th><th>Tiến độ</th><th>Cảnh báo</th><th>Kết quả chấm</th><th class="no-print"></th></tr></thead>'; };
+    GV.rows = rows; // các dòng đang hiện, dùng cho nhắc tiến độ và xuất Excel
     return tiles + '<div class="grid cols-2"><div class="card"><h2>Việc đã giao theo mức cảnh báo</h2>' + chart + '<p class="muted small">Bấm một cột để lọc bảng bên dưới; bấm lại để bỏ lọc.</p></div>' +
       '<div class="card"><h2>Các mức cảnh báo</h2><p class="small" style="margin:0;line-height:1.9"><span class="badge b-red">Quá hạn</span> đã qua hạn mà chưa báo xong · <span class="badge b-amber">Sắp đến hạn</span> còn từ 0 đến 2 ngày · <span class="badge b-green">Trong hạn</span> còn trên 2 ngày · ' +
       '<span class="badge b-gray">Chưa đặt hạn</span> · <span class="badge b-amber">Chờ xác nhận</span> cán bộ chưa nhận việc · <span class="badge b-amber">Có phản hồi</span> cán bộ báo việc chưa hợp lý · <span class="badge b-blue">Chờ đánh giá</span> cán bộ đã báo xong · <span class="badge b-green">Đã đánh giá</span>.</p>' +
       '<p class="muted small">Chấm kết quả việc đã giao như chấm KPI: mở phiếu của cán bộ, chọn H, Q, T cho việc mình giao rồi bấm Xác nhận. Việc do người khác giao thì người đó hoặc người phụ trách trực tiếp chấm.</p></div></div>' +
-      '<div class="card"><h2>Việc tôi giao (' + rows.length + '/' + out.length + ')</h2><div class="usebar no-print" style="margin-bottom:10px"><label>Người nhận<select id="gvWho"><option value="">Tất cả</option>' + opts(Object.keys(people).map(function (k) { return [k, people[k]]; }), GV.who) + '</select></label>' +
-      '<label>Mức cảnh báo<select id="gvLvSel"><option value="">Tất cả</option>' + opts(keys.map(function (k) { return [k, GV_LV[k][0]]; }), GV.lv) + '</select></label><label class="grow">Tìm theo tên việc, mã, người nhận<input type="search" id="gvQ" value="' + h(GV.q) + '"></label></div>' +
+      '<div class="card"><h2>' + (d.admin ? 'Tất cả việc đã giao trong cơ quan' : 'Việc tôi giao') + ' (' + rows.length + '/' + out.length + ')</h2><div class="usebar no-print" style="margin-bottom:10px">' +
+      (d.admin ? '<label>Đơn vị người nhận<select id="gvUnit"><option value="">Tất cả</option>' + opts(S.units.map(function (u) { return [u.id, u.name]; }), GV.unit) + '</select></label><label>Người giao<select id="gvBy"><option value="">Tất cả</option>' + opts(Object.keys(givers).map(function (k) { return [k, givers[k]]; }), GV.by) + '</select></label>' : '') + '<label>Người nhận<select id="gvWho"><option value="">Tất cả</option>' + opts(Object.keys(people).map(function (k) { return [k, people[k]]; }), GV.who) + '</select></label>' +
+      '<label>Mức cảnh báo<select id="gvLvSel"><option value="">Tất cả</option>' + opts(keys.map(function (k) { return [k, GV_LV[k][0]]; }), GV.lv) + '</select></label><label class="grow">Tìm theo tên việc, mã, người nhận<input type="search" id="gvQ" value="' + h(GV.q) + '"></label>' +
+      '<button class="btn" data-act="gvRemind">Chép nội dung nhắc tiến độ</button><button class="btn" data-act="gvExport">Xuất Excel</button></div>' +
       '<div class="tbl-wrap"><table class="tbl">' + head('Người nhận') + '<tbody>' + (rows.map(function (t) { return row(t, false); }).join('') || '<tr><td colspan="7" class="muted">Chưa có việc nào khớp. Vào thẻ “Giao việc mới” để giao.</td></tr>') + '</tbody></table></div></div>' +
       (inn.length ? '<div class="card"><h2>Việc tôi được giao (' + inn.length + ')</h2><div class="tbl-wrap"><table class="tbl">' + head('Người giao') + '<tbody>' + inn.map(function (t) { return row(t, true); }).join('') + '</tbody></table></div></div>' : '');
   }
@@ -1544,6 +1549,8 @@
   document.addEventListener('change', function (ev) {
     var el = ev.target;
     if (el.id === 'gvWho') { GV.who = el.value; gvRedraw(); }
+    if (el.id === 'gvBy') { GV.by = el.value; gvRedraw(); }
+    if (el.id === 'gvUnit') { GV.unit = el.value; gvRedraw(); }
     if (el.id === 'gvLvSel') { GV.lv = el.value; gvRedraw(); }
     if (el.dataset && el.dataset.gvp) GV.pick[el.dataset.gvp] = el.checked;
     if (el.id === 'gvType') { var c = document.getElementById('gvCode'); c.innerHTML = '<option value="">– chọn mã –</option>' + opts((S.cat || []).filter(function (x) { return x.active && x.type === el.value; }).map(function (x) { return [x.id, x.id + ' · ' + String(x.name).slice(0, 80) + ' (' + x.level + ', ' + f4(x.point) + 'đ/' + (x.unit || 'sp') + ')']; }), ''); }
@@ -1602,6 +1609,49 @@
   }
   ACT.gvTab = function (el) { location.hash = '#/giaoviec/' + el.dataset.t; };
   ACT.gvLv = function (el) { GV.lv = GV.lv === el.dataset.k ? '' : el.dataset.k; gvRedraw(); };
+  /** Nội dung nhắc tiến độ theo các dòng đang hiện: nhắc người nhận việc quá hạn, sắp đến hạn, chưa xác nhận; nhắc người giao việc chờ đánh giá, có phản hồi. */
+  ACT.gvRemind = function () {
+    var d = GV.d, rows = GV.rows || [], lines = ['NHẮC TIẾN ĐỘ CÔNG VIỆC ĐƯỢC GIAO – ' + String(d.period || '').toUpperCase() + ' (tính đến ' + fdate(d.today) + ')'];
+    var part = function (title, keys, whoKey, tail) {
+      var g = {}, n = 0;
+      rows.filter(function (t) { return keys.indexOf(t.lv.k) >= 0; }).forEach(function (t) { (g[t[whoKey]] || (g[t[whoKey]] = [])).push(t); n++; });
+      if (!n) return;
+      lines.push('', title + ' (' + n + ' việc):');
+      Object.keys(g).sort(function (a, b) { return (d.names[a] || a).localeCompare(d.names[b] || b, 'vi'); }).forEach(function (id) {
+        lines.push('• ' + (d.names[id] || id) + ':');
+        g[id].forEach(function (t) { lines.push('   - ' + (t.code ? t.code + ' ' : '') + t.name + (t.deadline ? ' – hạn ' + fdate(t.deadline) : '') + (t.lv.x ? ' (' + GV_LV[t.lv.k][0].toLowerCase() + ' ' + t.lv.x + ')' : '') + tail(t)); });
+      });
+    };
+    var giver = function (t) { return ' – người giao: ' + (d.names[t.by] || t.by); }, taker = function (t) { return ' – người nhận: ' + (d.names[t.userId] || t.userId); };
+    part('I. Việc QUÁ HẠN, đề nghị khẩn trương hoàn thành và cập nhật kết quả', ['late'], 'userId', giver);
+    part('II. Việc sắp đến hạn (trong 2 ngày)', ['soon'], 'userId', giver);
+    part('III. Việc được giao chưa xác nhận', ['wait'], 'userId', giver);
+    part('IV. Việc đã báo xong, đề nghị người giao đánh giá', ['review'], 'by', taker);
+    part('V. Việc có phản hồi của cán bộ, đề nghị người giao xem xét', ['fb'], 'by', taker);
+    if (lines.length === 1) return toast('Các dòng đang hiện không có việc nào cần nhắc.');
+    var text = lines.join('\n');
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { toast('Đã chép nội dung nhắc tiến độ. Dán vào Zalo hoặc thư để gửi.'); }, function () {
+      modal.innerHTML = '<div class="dlg" style="max-width:720px"><h2>Nội dung nhắc tiến độ</h2><textarea rows="16" readonly>' + h(text) + '</textarea><div class="actions"><button class="btn" data-act="closeModal">Đóng</button></div></div>';
+    });
+  };
+  ACT.gvExport = function (el) {
+    run(el, async function () {
+      if (!window.XLSX) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+      var d = GV.d, rows = GV.rows || [];
+      var aoa = [[S.config.orgName], ['BÁO CÁO TÌNH HÌNH GIAO VIỆC – ' + String(d.period || '').toUpperCase() + ' (tính đến ' + fdate(d.today) + ')'], [],
+        ['TT', 'Người nhận', 'Đơn vị', 'Người giao', 'Mã', 'Công việc', 'Số lượng', 'Hạn hoàn thành', 'Ngày hoàn thành', 'Tiến độ (%)', 'Cảnh báo', 'Chi tiết', 'H', 'Q', 'T', 'Điểm giao chuẩn G', 'Điểm thực đạt P', 'Số lần gia hạn']]
+        .concat(rows.map(function (t, i) {
+          var u = d.unitOf[t.userId] || (d.people.filter(function (p) { return p.id === t.userId; })[0] || {}).unitId;
+          return [i + 1, d.names[t.userId] || t.userId, unitName(u) || '', d.names[t.by] || t.by, t.code, t.name, t.qty, t.deadline ? fdate(t.deadline) : '', t.doneDate ? fdate(t.doneDate) : '', t.progress == null ? '' : t.progress,
+            GV_LV[t.lv.k][0], t.lv.x, t.locked ? Number(t.h) : '', t.locked ? Number(t.q) : '', t.locked ? Number(t.t) : '', t.g || '', t.locked ? t.score : '', t.ext || ''];
+        }));
+      var cnt = {}; rows.forEach(function (t) { cnt[t.lv.k] = (cnt[t.lv.k] || 0) + 1; });
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Việc đã giao');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Mức cảnh báo', 'Số việc']].concat(Object.keys(GV_LV).map(function (k) { return [GV_LV[k][0], cnt[k] || 0]; }), [['Tổng', rows.length]])), 'Tổng hợp');
+      XLSX.writeFile(wb, 'GiaoViec_' + String(d.period || '').replace(/[^\p{L}\p{N}]+/gu, '_') + '.xlsx');
+    });
+  };
   ACT.gvSend = function (el) {
     var ids = Object.keys(GV.pick).filter(function (k) { return GV.pick[k]; }), code = $('#gvCode').value, name = $('#gvName').value.trim();
     if (!ids.length) return toast('Chưa chọn người nhận việc.', true);

@@ -17,7 +17,7 @@ var KPI_TABLES = {
   // Cán bộ tự đánh giá: mỗi công việc một dòng, cột như biểu Excel mẫu
   Tasks: ['userId', 'period', 'evalId', 'id', 'order', 'name', 'product', 'qty', 'month', 'a', 'b', 'c', 'd', 'e', 's', 'n', 'point',
     'link', 'repeat', 'from', 'pm', 'evaluated', 'evaluatedAt', 'updatedAt', 'note', 'by',
-    'deadline', 'doneDate', 'progress', 'bonus', 'feedback', 'feedbackAt', 'feedbackDone', 'code', 'unit', 'std', 'hours', 'g'],
+    'deadline', 'doneDate', 'progress', 'bonus', 'feedback', 'feedbackAt', 'feedbackDone', 'code', 'unit', 'std', 'hours', 'g', 'nstd'],
   // Người phụ trách đánh giá: mỗi công việc một dòng, độc lập với phần cán bộ tự chấm
   Reviews: ['userId', 'period', 'evalId', 'id', 'order', 'name', 'product', 'qty', 'month', 'a', 'b', 'c', 'd', 'e', 's', 'n', 'point',
     'reviewerId', 'date', 'time', 'lock', 'note', 'progress', 'doneDate', 'bonus', 'overTime', 'overQuality', 'h', 'q', 't', 'score'],
@@ -58,7 +58,7 @@ var KPI_LABELS = {
     evaluated: 'Đã đánh giá', evaluatedAt: 'Ngày giờ đánh giá', updatedAt: 'Cập nhật', note: 'Nhận xét của người đánh giá', by: 'Người thêm việc (CCCD)',
     deadline: 'Hạn hoàn thành', doneDate: 'Ngày hoàn thành', progress: 'Tiến độ (%)', bonus: 'Điểm thưởng đề xuất (%)',
     feedback: 'Phản hồi của cán bộ', feedbackAt: 'Lúc phản hồi', feedbackDone: 'Phản hồi đã xem xét',
-    code: 'Mã sản phẩm', unit: 'Đơn vị tính', std: 'Điểm chuẩn một đơn vị', hours: 'Giờ chuẩn một đơn vị', g: 'Điểm giao chuẩn (G)'
+    code: 'Mã sản phẩm', unit: 'Đơn vị tính', std: 'Điểm chuẩn một đơn vị', hours: 'Giờ chuẩn một đơn vị', g: 'Điểm giao chuẩn (G)', nstd: 'Mức N theo danh mục'
   },
   Reviews: {
     userId: 'CCCD', period: 'Kỳ đánh giá', evalId: 'Mã phiếu', id: 'Mã công việc', order: 'TT', name: 'Tên công việc', product: 'Sản phẩm',
@@ -122,13 +122,20 @@ function KPI_factor(t, rule) {
   if (!(wH + wQ + wT)) { wH = wQ = wT = 1; }
   return (Number(t.H) || 0) * (wH + wQ * (Number(t.Q) || 0) + wT * (Number(t.T) || 0)) / sum;
 }
-/** Điểm một đơn vị của công việc. Việc lấy từ danh mục: key 's' là điểm chuẩn, key 'm' là điểm chuẩn × hệ số H, Q, T (chưa xác nhận thì null).
- * Việc ngoài danh mục: tính theo 5 mức A–E như trước. */
+/** Điểm một đơn vị của công việc.
+ * Việc ngoài danh mục: tính theo 5 mức A–E.
+ * Việc lấy từ Danh mục sản phẩm: mặc định là điểm chuẩn của mã; nếu chọn đủ 5 mức A–E thì lấy điểm theo A–E thay cho điểm chuẩn
+ * (cán bộ tự điều chỉnh ở khối tự kê; người phụ trách điều chỉnh ở khối lãnh đạo, để trống thì theo khối tự kê).
+ * key 's': điểm giao chuẩn một đơn vị; key 'm': điểm đó × hệ số H, Q, T (chưa xác nhận thì null). */
 function KPI_taskCalc(t, key, rule) {
   if (!t || !t.code) return KPI_calc(t && t[key]);
-  var std = Number(t.std) || 0;
-  if (key === 's') return { s: '', n: String(t.n || ''), point: std };
-  if (key === 'm') return t.H === undefined || t.H === null || t.H === '' ? null : { s: '', n: String(t.n || ''), point: std * KPI_factor(t, rule) };
+  var std = Number(t.std) || 0, own = KPI_calc(t.s), base = own ? { s: own.s, n: own.n, point: own.point, adj: true } : { s: '', n: String(t.n || ''), point: std };
+  if (key === 's') return base;
+  if (key === 'm') {
+    if (t.H === undefined || t.H === null || t.H === '') return null;
+    var lead = KPI_calc(t.m), b = lead ? { s: lead.s, n: lead.n, point: lead.point, adj: true } : base;
+    return { s: b.s, n: b.n, point: b.point * KPI_factor(t, rule), base: b.point, adj: !!b.adj };
+  }
   return null;
 }
 var KPI_MAX_EVIDENCE = 3; // số minh chứng tối đa của một công việc
@@ -383,7 +390,7 @@ function KPI_createCore(store, env) {
       var c = (cat || catalogMap())[str(t.code)];
       if (!c) err('Mã sản phẩm ' + cut(t.code, 30) + ' không có trong Danh mục sản phẩm.');
       out.code = str(c.id); out.std = num(c.point); out.hours = num(c.hours); out.unit = str(c.unit); out.n = str(c.level);
-      out.product = cut(c.type, 100) || 'Khác'; out.s = [0, 0, 0, 0, 0];
+      out.product = cut(c.type, 100) || 'Khác';
       out.qty = Math.round(Math.min(qty, 100000) * 100) / 100;
       if (!out.name) out.name = cut(c.name, 2000);
     }
@@ -421,7 +428,7 @@ function KPI_createCore(store, env) {
       if (str(r.from)) t.from = str(r.from);
       var pm = cleanLevels(str(r.pm).split(','));
       if (KPI_calc(pm)) t.pm = pm;
-      if (str(r.code)) { t.code = str(r.code); t.unit = str(r.unit); t.std = num(r.std); t.hours = num(r.hours); t.n = str(r.n); } // việc lấy từ Danh mục sản phẩm
+      if (str(r.code)) { t.code = str(r.code); t.unit = str(r.unit); t.std = num(r.std); t.hours = num(r.hours); t.n = str(r.nstd) || str(r.n); } // việc lấy từ Danh mục sản phẩm
       if (str(r.by)) t.by = str(r.by);                    // việc do người phụ trách thêm cho cấp dưới
       if (str(r.deadline)) t.deadline = str(r.deadline);
       if (str(r.doneDate)) t.doneDate = str(r.doneDate);
@@ -433,10 +440,15 @@ function KPI_createCore(store, env) {
       if (v) {
         if (str(v.note)) t.note = str(v.note);            // nhận xét của người đánh giá cho riêng việc này
         var m = levelsOf(v);
-        if (t.code && str(v.h) !== '') { // việc trong danh mục: người phụ trách xác nhận bằng hệ số H, Q, T
+        if (t.code && str(v.h) !== '') { // việc trong danh mục: người phụ trách xác nhận bằng hệ số H, Q, T; A–E nếu có là phần điều chỉnh thêm
           t.H = num(v.h); t.Q = num(v.q); t.T = num(v.t);
+          if (KPI_calc(m)) t.m = m;
           t.mBy = str(v.reviewerId); t.mDate = str(v.date); t.mTime = str(v.time); if (str(v.lock) === 'Khoá') t.locked = true;
+          if (str(v.progress) !== '') t.mProgress = pct(v.progress);
           if (str(v.doneDate)) t.mDone = str(v.doneDate);
+          if (num(v.bonus)) t.mBonus = num(v.bonus);
+          if (str(v.overTime)) t.ot = true;
+          if (str(v.overQuality)) t.oq = true;
         } else if (KPI_calc(m)) { t.m = m; t.mBy = str(v.reviewerId); t.mDate = str(v.date); t.mTime = str(v.time); if (str(v.lock) === 'Khoá') t.locked = true;
           if (str(v.progress) !== '') t.mProgress = pct(v.progress);
           if (str(v.doneDate)) t.mDone = str(v.doneDate);
@@ -453,7 +465,7 @@ function KPI_createCore(store, env) {
     if (tasks.length > 400) err('Phiếu có quá nhiều công việc (tối đa 400).');
     var pname = str(period.name), now = nowIso();
     function base(t, i, key) {
-      var lv = t.code ? null : t[key], c = tcalc(t, key), row = { userId: str(userId), period: pname, evalId: str(evalId), id: t.id, order: i + 1, name: t.name, product: t.product, qty: t.qty, month: t.month };
+      var lv = t[key], c = tcalc(t, key), row = { userId: str(userId), period: pname, evalId: str(evalId), id: t.id, order: i + 1, name: t.name, product: t.product, qty: t.qty, month: t.month };
       KEYS.forEach(function (k, j) { row[k] = levelText(j, (lv || [])[j]); });
       row.s = c ? c.s : ''; row.n = c ? c.n : ''; row.point = c ? r4(c.point) : '';
       return row;
@@ -461,7 +473,7 @@ function KPI_createCore(store, env) {
     store.replaceGroup('Tasks', 'evalId', evalId, tasks.map(function (t, i) {
       var row = base(t, i, 's'), done = !!(t.locked && tcalc(t, 'm'));
       row.code = t.code || ''; row.unit = t.code ? t.unit || '' : ''; row.std = t.code ? num(t.std) : ''; row.hours = t.code ? num(t.hours) : '';
-      row.g = t.code ? r4(num(t.std) * num(t.qty)) : '';
+      row.g = t.code ? r4((tcalc(t, 's') || { point: 0 }).point * num(t.qty)) : ''; row.nstd = t.code ? str(t.n) : '';
       row.link = t.link || ''; row.repeat = t.repeat ? 'Có' : ''; row.from = t.from || ''; row.pm = KPI_calc(t.pm) ? t.pm.join(',') : '';
       row.evaluated = done ? 'Có' : ''; row.evaluatedAt = done ? (str(t.mDate) + ' ' + str(t.mTime)).trim() : ''; row.updatedAt = now;
       row.note = t.note || ''; row.by = t.by || '';
@@ -769,6 +781,9 @@ function KPI_createCore(store, env) {
       .filter(function (t) { return p0.selfScore || !(t && old[t.id] && old[t.id].locked); })
       .map(function (t) { return cleanTask(t, period, catMap); })
       .filter(function (t) { return t.name || t.code || t.s.some(function (v) { return v; }); }));
+    tasks.forEach(function (t, i) { // việc trong danh mục: 5 mức A–E hoặc để trống cả, hoặc chọn đủ
+      if (t.code && !t.locked && t.s.some(function (v) { return v; }) && !KPI_calc(t.s)) err('Công việc số ' + (i + 1) + ' (mã ' + t.code + '): muốn điều chỉnh theo A–E thì chọn đủ 5 mức, không thì để trống cả 5.');
+    });
     tasks.forEach(function (t, i) {
       if (t.locked) { seen[t.id] = true; return; }
       if (seen[t.id]) t.id = env.uuid();
@@ -777,6 +792,7 @@ function KPI_createCore(store, env) {
       if (old[t.id] && old[t.id].by) t.by = old[t.id].by;
       if (old[t.id] && old[t.id].code && t.code === old[t.id].code && has(old[t.id].H)) { // giữ hệ số người phụ trách đã xác nhận
         t.H = old[t.id].H; t.Q = old[t.id].Q; t.T = old[t.id].T; t.mBy = old[t.id].mBy; t.mDate = old[t.id].mDate; t.mTime = old[t.id].mTime;
+        ['mProgress', 'mDone', 'mBonus', 'ot', 'oq'].forEach(function (k) { if (has(old[t.id][k])) t[k] = old[t.id][k]; });
       }
       if (old[t.id] && old[t.id].m) { // giữ điểm người phụ trách đã chấm khi phiếu bị trả lại
         t.m = old[t.id].m; t.mBy = old[t.id].mBy; t.mDate = old[t.id].mDate; t.mTime = old[t.id].mTime;
@@ -792,7 +808,7 @@ function KPI_createCore(store, env) {
       if (p0.selfScore) { // tự chấm: mức tự chọn chính là kết quả, ghi nhận ngay
         var at = stamp();
         tasks.forEach(function (t) {
-          if (t.code) { if (!has(t.H)) { t.H = 1; t.Q = 1; t.T = 1; } } // việc trong danh mục: tự xác nhận hoàn thành đủ, đạt, đúng hạn nếu cấp trên chưa xác nhận
+          if (t.code) { if (!has(t.H)) { t.H = 1; t.Q = 1; t.T = 1; } confirmTask(t, { ot: t.ot, oq: t.oq }); } // việc trong danh mục: tự xác nhận hoàn thành đủ, đạt, đúng hạn nếu cấp trên chưa xác nhận
           else if (old[t.id] && old[t.id].by && KPI_calc(old[t.id].m) && !KPI_calc(t.s)) { t.m = old[t.id].m; } // việc cấp trên thêm: giữ mức cấp trên chấm
           else t.m = t.s.slice();
           t.locked = true; t.mBy = str(me.id); t.mDate = at.date; t.mTime = at.time;
@@ -902,9 +918,11 @@ function KPI_createCore(store, env) {
           var H = coef('H', x.h), Q = coef('Q', x.q), T = coef('T', x.t);
           if (Q === 0) H = 0; // sản phẩm không sử dụng được thì không ghi nhận khối lượng
           if ((H < 1 || Q < 1 || T < 1) && !note) err('Công việc ' + label + ' bị giảm điểm: hãy ghi rõ lý do ở ô nhận xét để cán bộ được biết.');
+          var lm = cleanLevels(x.m);
+          if (lm.some(function (v) { return v; }) && !KPI_calc(lm)) err('Công việc ' + label + ': muốn điều chỉnh theo A–E thì chọn đủ 5 mức ở khối lãnh đạo, không thì để trống cả 5.');
+          if (KPI_calc(lm)) t.m = lm; else delete t.m;
           t.H = H; t.Q = Q; t.T = T; t.note = note; t.locked = true; t.mBy = str(me.id); t.mDate = at.date; t.mTime = at.time;
-          if (DATE.test(str(x.doneDate))) t.mDone = str(x.doneDate); else if (t.doneDate) t.mDone = t.doneDate;
-          if (t.fb) t.fbDone = true;
+          confirmTask(t, x); // tiến độ xác nhận, ngày hoàn thành, điểm thưởng, vượt tiến độ, vượt chất lượng
         } else {
           var m = cleanLevels(x.m);
           if (!KPI_calc(m)) err('Công việc ' + label + ' chưa chọn đủ 5 mức A, B, C, D, E.');
@@ -1182,9 +1200,10 @@ function KPI_createCore(store, env) {
       var n = 0, scored = 0, done = 0, over = 0, wSum = 0, wDone = 0;
       byEval[eid].forEach(function (r) {
         var v = rv[eid + '|' + str(r.id)], inCat = !!str(r.code), locked = v && str(v.lock) === 'Khoá';
-        var m = !locked ? null : inCat ? (str(v.h) !== '' ? { point: num(r.std) } : null) : KPI_calc(levelsOf(v)), sc = inCat ? { point: num(r.std) } : KPI_calc(levelsOf(r));
+        var sc = KPI_calc(levelsOf(r)) || (inCat ? { point: num(r.std) } : null);
+        var m = !locked ? null : inCat ? (str(v.h) !== '' ? (KPI_calc(levelsOf(v)) || sc) : null) : KPI_calc(levelsOf(v));
         var w = (num(r.qty) || 1) * (m ? m.point : sc ? sc.point : KPI_MODEL.nLevels[0].point);
-        var prog = !m ? 0 : inCat ? Math.round(num(v.h) * 100) : (str(v.progress) !== '' ? pct(v.progress) : 100);
+        var prog = !m ? 0 : str(v.progress) !== '' ? pct(v.progress) : inCat ? Math.round(num(v.h) * 100) : 100;
         n++; wSum += w; wDone += w * prog / 100;
         if (m) { scored++; if (prog >= 100) done++; if (str(v.overTime) && str(v.overQuality)) over++; }
       });

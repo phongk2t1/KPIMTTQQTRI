@@ -96,6 +96,18 @@ Các khối nhiều kỳ trên trang Tổng quan (lấy bằng thao tác `stats`
 
 **Phạm vi được xem.** (Riêng bảng xếp loại: người tham mưu thấy toàn cơ quan, thành viên biểu quyết thấy những người đã được trình.) Mỗi người chỉ thấy chính mình và những người nằm dưới mình trong cây phụ trách (mọi cấp); hai nhánh ngang hàng không thấy nhau; quản trị thấy tất cả. Quy tắc này do máy chủ kiểm tra ở `overview`, `stats`, `getEvaluation`. Danh sách đơn vị gửi về cũng chỉ gồm đơn vị của mình, của những người mình phụ trách và các đơn vị cấp trên của chúng.
 
+## Danh mục sản phẩm và cách tính điểm theo phương án thí điểm của Tổ giúp việc KPI
+
+Đây là cách kê khai chính từ tháng 11/2026 (theo "Báo cáo đề xuất phương án thí điểm bộ công cụ đánh giá chỉ số KPI").
+
+- **Danh mục sản phẩm** (trang tính `DanhMucSanPham`, cột như tệp "DANH MỤC SẢN PHẨM (THÍ ĐIỂM KPI)"): mỗi mã có loại, tên, thời gian tiêu chuẩn, mức N, điểm chuẩn, đơn vị tính, giờ chuẩn quy đổi. Quản trị sửa ở **Quản trị › Danh mục sản phẩm** (thêm, sửa, xoá, nạp từ Excel, xuất Excel). Nạp lần đầu từ Apps Script bằng `importCatalog()` (biến `KPI_CATALOG`, không đưa lên GitHub).
+- **Kê khai**: trên phiếu Tự đánh giá chọn loại sản phẩm ở menu xổ (ví dụ Công văn), bấm **Thêm** ở từng sản phẩm hoặc tích nhiều sản phẩm rồi bấm **Thêm các sản phẩm đã tích**; ghi rõ tên việc, nhập số lượng, hạn, minh chứng. Cũng tìm được bằng mã hoặc tên. Người phụ trách dùng đúng ô này để **giao việc** cho cấp dưới (chưa chấm) hoặc thêm và xác nhận luôn.
+- **Điểm giao chuẩn** `G = điểm chuẩn của mã × số lượng`. Điểm chuẩn lấy theo danh mục ở máy chủ tại thời điểm kê; sửa danh mục không làm đổi việc đã kê.
+- **Người phụ trách xác nhận** ba hệ số: H (khối lượng) 1 / 0,8 / 0,5 / 0; Q (chất lượng) 1 / 0,8 / 0,5 / 0; T (tiến độ) 1 / 0,8 / 0,5 / 0. Giảm điểm phải ghi lý do; Q = 0 thì H = 0.
+- **Điểm thực đạt** `P = G × H × (wH + wQ×Q + wT×T) / (wH + wQ + wT)`; mặc định tỷ trọng 1-1-1, tức `P = G × H × (1 + Q + T) / 3`. Đổi tỷ trọng (ví dụ 25-50-25) ở **Quản trị › Xếp loại, cơ quan**.
+- **Chỉ số của phiếu**: tổng G đã xác nhận, tổng P, tỷ lệ KPI = P/G, giờ chuẩn quy đổi so với quỹ giờ làm việc của kỳ (số ngày thứ Hai đến thứ Sáu × 8 giờ).
+- Việc chưa có trong danh mục: dùng mã `K01` (tính theo số giờ thực hiện). Cách chấm 5 yếu tố A–E vẫn còn cho việc ngoài danh mục và cho dữ liệu khảo sát cũ.
+
 ## Kho công việc mẫu (trang tính `khocongviecmau`)
 
 - Cột giống biểu Excel mẫu, thêm **CCCD của vị trí** trước cột **Mã công việc** (`CV00001`…). Mỗi việc mẫu thuộc một vị trí.

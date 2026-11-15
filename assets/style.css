@@ -330,3 +330,15 @@ ul.tree > li { border-left-color: var(--pri); }
 .sheet .flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
 .sheet .flow .ext { display: inline-flex; gap: 4px; align-items: center; }
 .sheet .flow .ext input { width: 150px; padding: 3px 6px; font-size: 13px; }
+
+/* Trang Giao việc */
+.gvbar { height: 8px; border-radius: 6px; background: #e6ecf5; overflow: hidden; min-width: 90px; }
+.gvbar i { display: block; height: 100%; border-radius: 6px; background: var(--grad); }
+.gvpeople { max-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; }
+.gvunit { margin-bottom: 10px; } .gvunit > b { display: block; font-size: 13px; color: var(--muted); margin: 6px 0 4px; }
+.gvunit label.ck { display: flex; align-items: center; gap: 8px; padding: 6px 2px; cursor: pointer; }
+.gvunit label.ck input { width: 18px; height: 18px; flex: none; }
+.badge.b-red { background: #fde8e8; color: #b42318; }
+.sheet details.tx > summary { cursor: pointer; }
+.sheet details.tx[open] { display: flex !important; flex-direction: column; align-items: stretch; gap: 6px; }
+.sheet details.tx select, .sheet details.tx input { width: 100%; }

@@ -107,7 +107,9 @@ var KPI_RULE = {
   minOver: 30,   // tỷ lệ % nhiệm vụ vượt mức (cả tiến độ lẫn chất lượng) tối thiểu để được xét xuất sắc
   common: 30,    // điểm tối đa của nhóm tiêu chí chung; phần còn lại của thang 100 là kết quả nhiệm vụ
   maxBonus: 5,   // điểm thưởng tối đa của một công việc, tính bằng % điểm công việc đó
-  wH: 1, wQ: 1, wT: 1 // tỷ trọng khối lượng, chất lượng, tiến độ trong điểm thực đạt (1-1-1 là chia đều 33,33%)
+  wH: 1, wQ: 1, wT: 1, // tỷ trọng khối lượng, chất lượng, tiến độ trong điểm thực đạt (1-1-1 là chia đều 33,33%)
+  useBonus: 0,  // 1 = áp dụng điểm thưởng; 0 = tắt (Báo cáo thí điểm: chưa áp dụng điểm thưởng khi chưa được Ban Thường trực quyết định)
+  useRating: 0  // 1 = mở trang xếp loại chất lượng theo kỳ; 0 = tắt (thí điểm: chưa dùng KPI làm căn cứ xếp loại)
 };
 /* Hệ số đánh giá kết quả thực hiện một nhiệm vụ lấy từ Danh mục sản phẩm (Báo cáo đề xuất thí điểm KPI của Tổ giúp việc):
  * điểm giao chuẩn G = điểm chuẩn của mã × số lượng; điểm thực đạt P = G × H × (wH + wQ×Q + wT×T) / (wH + wQ + wT). */
@@ -124,17 +126,18 @@ function KPI_factor(t, rule) {
 }
 /** Điểm một đơn vị của công việc.
  * Việc ngoài danh mục: tính theo 5 mức A–E.
- * Việc lấy từ Danh mục sản phẩm: mặc định là điểm chuẩn của mã; nếu chọn đủ 5 mức A–E thì lấy điểm theo A–E thay cho điểm chuẩn
- * (cán bộ tự điều chỉnh ở khối tự kê; người phụ trách điều chỉnh ở khối lãnh đạo, để trống thì theo khối tự kê).
- * key 's': điểm giao chuẩn một đơn vị; key 'm': điểm đó × hệ số H, Q, T (chưa xác nhận thì null). */
+ * Việc lấy từ Danh mục sản phẩm: điểm giao chuẩn luôn là điểm chuẩn của mã (định mức áp dụng thống nhất).
+ * A–E cán bộ chọn ở khối tự kê chỉ là ĐỀ XUẤT điều chỉnh (trả về ở prop), không làm đổi điểm.
+ * Chỉ khi người phụ trách chọn đủ 5 mức A–E ở khối lãnh đạo thì định mức của việc đó mới đổi theo A–E.
+ * key 's': điểm giao chuẩn một đơn vị; key 'm': điểm đó × hệ số H, Q, T (chưa xác nhận thì null), base = định mức được áp dụng. */
 function KPI_taskCalc(t, key, rule) {
   if (!t || !t.code) return KPI_calc(t && t[key]);
-  var std = Number(t.std) || 0, own = KPI_calc(t.s), base = own ? { s: own.s, n: own.n, point: own.point, adj: true } : { s: '', n: String(t.n || ''), point: std };
+  var std = Number(t.std) || 0, own = KPI_calc(t.s), base = { s: '', n: String(t.n || ''), point: std, prop: own || null };
   if (key === 's') return base;
   if (key === 'm') {
     if (t.H === undefined || t.H === null || t.H === '') return null;
-    var lead = KPI_calc(t.m), b = lead ? { s: lead.s, n: lead.n, point: lead.point, adj: true } : base;
-    return { s: b.s, n: b.n, point: b.point * KPI_factor(t, rule), base: b.point, adj: !!b.adj };
+    var lead = KPI_calc(t.m), b = lead || base;
+    return { s: lead ? lead.s : '', n: b.n, point: b.point * KPI_factor(t, rule), base: b.point, adj: !!lead };
   }
   return null;
 }
@@ -278,7 +281,7 @@ function KPI_createCore(store, env) {
   /** Tổng điểm giao chuẩn của các việc đã được xác nhận. */
   function gLocked(tasks) {
     var sum = 0;
-    tasks.forEach(function (t) { var c = t.locked && tcalc(t, 'm') ? tcalc(t, 's') : null; if (c) sum += num(t.qty) * c.point; });
+    tasks.forEach(function (t) { var m = t.locked ? tcalc(t, 'm') : null, c = m ? tcalc(t, 's') : null; if (c) sum += num(t.qty) * (t.code ? m.base : c.point); });
     return r4(sum);
   }
   /** Số ngày làm việc (thứ Hai đến thứ Sáu) của kỳ × 8 giờ. */
@@ -288,7 +291,8 @@ function KPI_createCore(store, env) {
     for (var d = a, g = 0; d <= b && g < 800; d = new Date(d.getTime() + 86400000), g++) { var w = d.getUTCDay(); if (w >= 1 && w <= 5) n++; }
     return n * 8;
   }
-  function bonusOf(v) { return r2(Math.min(Math.max(num(v), 0), rule().maxBonus)); }
+  function bonusOf(v) { var rl = rule(); return rl.useBonus ? r2(Math.min(Math.max(num(v), 0), rl.maxBonus)) : 0; } // điểm thưởng đang tắt thì luôn là 0
+  function needRating() { if (!rule().useRating) err('Chức năng xếp loại chất lượng đang tắt trong thời gian thí điểm. Quản trị hệ thống bật lại ở Quản trị > Cấu hình khi cơ quan quyết định áp dụng.'); }
   /** Mã kế tiếp dạng <tiền tố><số>, ví dụ CV00012, MC000007. */
   function codeMaker(table, prefix, width) {
     var max = 0;
@@ -433,7 +437,7 @@ function KPI_createCore(store, env) {
       if (str(r.deadline)) t.deadline = str(r.deadline);
       if (str(r.doneDate)) t.doneDate = str(r.doneDate);
       if (str(r.progress) !== '') t.progress = pct(r.progress);
-      if (num(r.bonus)) t.bonus = num(r.bonus);
+      if (bonusOf(r.bonus)) t.bonus = bonusOf(r.bonus);
       if (str(r.feedback)) { t.fb = str(r.feedback); t.fbAt = str(r.feedbackAt); if (str(r.feedbackDone)) t.fbDone = true; } // cán bộ phản hồi không tán thành
       if (str(r.note)) t.note = str(r.note);
       var v = reviews[t.id];
@@ -446,13 +450,13 @@ function KPI_createCore(store, env) {
           t.mBy = str(v.reviewerId); t.mDate = str(v.date); t.mTime = str(v.time); if (str(v.lock) === 'Khoá') t.locked = true;
           if (str(v.progress) !== '') t.mProgress = pct(v.progress);
           if (str(v.doneDate)) t.mDone = str(v.doneDate);
-          if (num(v.bonus)) t.mBonus = num(v.bonus);
+          if (bonusOf(v.bonus)) t.mBonus = bonusOf(v.bonus);
           if (str(v.overTime)) t.ot = true;
           if (str(v.overQuality)) t.oq = true;
         } else if (KPI_calc(m)) { t.m = m; t.mBy = str(v.reviewerId); t.mDate = str(v.date); t.mTime = str(v.time); if (str(v.lock) === 'Khoá') t.locked = true;
           if (str(v.progress) !== '') t.mProgress = pct(v.progress);
           if (str(v.doneDate)) t.mDone = str(v.doneDate);
-          if (num(v.bonus)) t.mBonus = num(v.bonus);
+          if (bonusOf(v.bonus)) t.mBonus = bonusOf(v.bonus);
           if (str(v.overTime)) t.ot = true;      // vượt tiến độ
           if (str(v.overQuality)) t.oq = true;   // vượt chất lượng
         }
@@ -473,7 +477,7 @@ function KPI_createCore(store, env) {
     store.replaceGroup('Tasks', 'evalId', evalId, tasks.map(function (t, i) {
       var row = base(t, i, 's'), done = !!(t.locked && tcalc(t, 'm'));
       row.code = t.code || ''; row.unit = t.code ? t.unit || '' : ''; row.std = t.code ? num(t.std) : ''; row.hours = t.code ? num(t.hours) : '';
-      row.g = t.code ? r4((tcalc(t, 's') || { point: 0 }).point * num(t.qty)) : ''; row.nstd = t.code ? str(t.n) : '';
+      row.g = t.code ? r4(((t.locked && tcalc(t, 'm')) || { base: num(t.std) }).base * num(t.qty)) : ''; row.nstd = t.code ? str(t.n) : '';
       row.link = t.link || ''; row.repeat = t.repeat ? 'Có' : ''; row.from = t.from || ''; row.pm = KPI_calc(t.pm) ? t.pm.join(',') : '';
       row.evaluated = done ? 'Có' : ''; row.evaluatedAt = done ? (str(t.mDate) + ' ' + str(t.mTime)).trim() : ''; row.updatedAt = now;
       row.note = t.note || ''; row.by = t.by || '';
@@ -1259,6 +1263,7 @@ function KPI_createCore(store, env) {
   function openPeriod(id) { var p = needPeriod(id); if (phaseOf(p) === 'khoa') err('Kỳ đánh giá đã khoá.'); return p; }
 
   A.rating = function (me, d) {
+    needRating();
     var period = needPeriod(d.periodId), rl = rule(), staff = isStaff(me), voter = on(me.isVoter);
     var map = reportsMap(), scope = subtreeIds(me.id, map), stats = ratingStats(period), rows = {};
     store.all('Ratings').forEach(function (r) { if (str(r.periodId) === str(period.id)) rows[str(r.userId)] = r; });
@@ -1289,6 +1294,7 @@ function KPI_createCore(store, env) {
   function levelOrBlank(v) { return KPI_RATE[str(v)] ? str(v) : ''; }
   /** Lãnh đạo trực tiếp đề xuất mức xếp loại cho những người mình phụ trách. */
   A.ratingPropose = function (me, d) {
+    needRating();
     var period = openPeriod(d.periodId), n = 0;
     (Array.isArray(d.items) ? d.items : []).forEach(function (x) {
       var u = find('Users', x.userId) || err('Không tìm thấy cán bộ.');
@@ -1302,6 +1308,7 @@ function KPI_createCore(store, env) {
   };
   /** Bộ phận tham mưu tổng hợp: nhập điểm tiêu chí chung, đề xuất mức xếp loại; submit = true thì trình tập thể biểu quyết. */
   A.ratingStaff = function (me, d) {
+    needRating();
     if (!isStaff(me)) err('Chỉ người được giao tham mưu tổng hợp hoặc quản trị mới thực hiện được bước này.');
     var period = openPeriod(d.periodId), rl = rule(), stats = ratingStats(period), todo = [], changes = {};
     (Array.isArray(d.items) ? d.items : []).forEach(function (x) {
@@ -1323,6 +1330,7 @@ function KPI_createCore(store, env) {
   };
   /** Thành viên tập thể lãnh đạo biểu quyết mức xếp loại cho những người đã được trình. */
   A.ratingVote = function (me, d) {
+    needRating();
     if (!on(me.isVoter)) err('Anh/chị không thuộc thành phần biểu quyết.');
     var period = openPeriod(d.periodId), n = 0;
     (Array.isArray(d.items) ? d.items : []).forEach(function (x) {
@@ -1340,6 +1348,7 @@ function KPI_createCore(store, env) {
   };
   /** Chốt kết quả theo đa số phiếu. Bằng phiếu thì lấy theo đề xuất của tham mưu. Cơ quan chưa khai thành phần biểu quyết thì chốt theo đề xuất của tham mưu. */
   A.ratingDecide = function (me, d) {
+    needRating();
     if (!isStaff(me)) err('Chỉ người được giao tham mưu tổng hợp hoặc quản trị mới chốt được kết quả.');
     var period = openPeriod(d.periodId), rl = rule(), stats = ratingStats(period), only = {}, todo = [], changes = {};
     var hasVoters = store.all('Users').some(function (u) { return on(u.active) && on(u.isVoter); });
@@ -1364,6 +1373,7 @@ function KPI_createCore(store, env) {
   };
   /** Mở lại kết quả đã chốt của một người để biểu quyết, chốt lại. */
   A.ratingReopen = function (me, d) {
+    needRating();
     if (!isStaff(me)) err('Chỉ người được giao tham mưu tổng hợp hoặc quản trị mới mở lại được kết quả.');
     var period = openPeriod(d.periodId);
     if (!find('Ratings', ratingId(period, d.userId))) err('Chưa có kết quả để mở lại.');

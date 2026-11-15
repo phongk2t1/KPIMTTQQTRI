@@ -690,7 +690,7 @@ function KPI_createCore(store, env) {
       periods: store.all('Periods').slice().sort(function (a, b) { return str(b.startDate).localeCompare(str(a.startDate)); }).map(periodOut),
       config: publicConfig(),
       canUpload: !!env.evidence,
-      canAssign: rank(me) <= KPI_LEVELS.pho.rank || !!(reportsMap()[str(me.id)] || []).length || !!Object.keys(extraIds(me)).length
+      canAssign: on(me.isAdmin) || rank(me) <= KPI_LEVELS.pho.rank || !!(reportsMap()[str(me.id)] || []).length || !!Object.keys(extraIds(me)).length
     };
   };
 
@@ -1168,24 +1168,24 @@ function KPI_createCore(store, env) {
   };
   /** Trang Giao việc: những người được giao việc, các việc mình đã giao và các việc mình được giao trong kỳ, kèm tiến độ để cảnh báo. */
   A.assignBoard = function (me, d) {
-    var period = needPeriod(d.periodId), names = {}, evs = {}, lock = {}, tasks = [];
+    var period = needPeriod(d.periodId), names = {}, evs = {}, lock = {}, tasks = [], admin = on(me.isAdmin), unitOf = {};
     var users = store.all('Users').filter(function (u) { return on(u.active); });
-    users.forEach(function (u) { names[str(u.id)] = str(u.fullName); });
+    users.forEach(function (u) { names[str(u.id)] = str(u.fullName); unitOf[str(u.id)] = str(u.unitId); });
     store.all('Evaluations').forEach(function (e) { if (str(e.periodId) === str(period.id)) evs[str(e.id)] = e; });
     store.all('Reviews').forEach(function (r) { if (evs[str(r.evalId)]) lock[str(r.id)] = r; });
     store.all('Tasks').forEach(function (r) {
       var e = evs[str(r.evalId)];
       if (!e || !str(r.by)) return;
       var out = str(r.by) === str(me.id), inn = str(e.userId) === str(me.id);
-      if (!out && !inn) return;
+      if (!out && !inn && !admin) return; // quản trị xem toàn bộ việc đã giao trong cơ quan để báo cáo, nhắc tiến độ
       var x = {}, L = lock[str(r.id)] || {}, locked = str(L.lock) === 'Khoá';
       try { x = JSON.parse(str(r.meta) || '{}') || {}; } catch (err2) { x = {}; }
-      tasks.push({ dir: out ? 'out' : 'in', userId: str(e.userId), by: str(r.by), taskId: str(r.id), name: str(r.name), code: str(r.code), qty: num(r.qty) || 1, unit: str(r.unit),
+      tasks.push({ dir: out || (admin && !inn) ? 'out' : 'in', userId: str(e.userId), by: str(r.by), taskId: str(r.id), name: str(r.name), code: str(r.code), qty: num(r.qty) || 1, unit: str(r.unit),
         deadline: str(r.deadline), doneDate: locked && str(L.doneDate) ? str(L.doneDate) : str(r.doneDate), progress: locked && str(L.progress) !== '' ? num(L.progress) : (str(r.progress) === '' ? null : num(r.progress)),
         acc: str(x.acc), ext: Array.isArray(x.ext) ? x.ext.length : 0, src: !!x.src, locked: locked, h: locked ? str(L.h) : '', q: locked ? str(L.q) : '', t: locked ? str(L.t) : '',
         score: locked ? num(L.score) : null, g: num(r.g), evStatus: str(e.status) });
     });
-    return { today: nowVn().slice(0, 10), names: names, tasks: tasks,
+    return { today: nowVn().slice(0, 10), names: names, tasks: tasks, admin: admin, unitOf: admin ? unitOf : {}, period: str(period.name),
       people: users.filter(function (u) { return on(u.selfEval) && canAssign(me, u); }).map(function (u) { return pub(u); }) };
   };
   /** Giao cùng một việc cho nhiều người một lượt. Mỗi người một dòng kết quả; người lỗi không làm hỏng người khác. */

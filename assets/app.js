@@ -54,7 +54,7 @@
     finally { if (btn) btn.disabled = false; }
   }
   function setBoot(b) {
-    S.user = b.user; S.hasReports = b.hasReports; S.units = b.units; S.periods = b.periods; S.config = b.config; S.canUpload = b.canUpload;
+    S.user = b.user; S.hasReports = b.hasReports; S.units = b.units; S.periods = b.periods; S.config = b.config; S.canUpload = b.canUpload; S.canAssign = !!b.canAssign;
     if (!period()) {
       var open = S.periods.filter(function (p) { return p.phase === 'mo'; })[0] || S.periods.filter(function (p) { return p.phase !== 'khoa'; })[0];
       S.periodId = (open || S.periods[0] || { id: '' }).id;
@@ -137,6 +137,7 @@
   function navItems() {
     var u = S.user, items = [['tongquan', 'Tổng quan']];
     if (u.selfEval) items.push(['tudanhgia', 'Tự đánh giá']);
+    if (S.canAssign) items.push(['giaoviec', 'Giao việc']);
     if (S.hasReports) items.push(['duyet', 'Đánh giá cấp dưới']);
     if (S.hasReports || u.isAdmin) items.push(['baocao', 'KPI tổng hợp']);
     if ((S.config.rule || {}).useRating && (S.hasReports || u.isAdmin || u.isStaff || u.isVoter)) items.push(['xeploai', 'Xếp loại']);
@@ -236,20 +237,20 @@
     if (f) f.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
-  var TITLES = { tongquan: 'Tổng quan', tudanhgia: 'Phiếu tự đánh giá', phieu: 'Phiếu đánh giá', duyet: 'Đánh giá cấp dưới', baocao: 'KPI tổng hợp', xeploai: 'Xếp loại chất lượng', quantri: 'Quản trị hệ thống', tieuchi: 'Bảng tiêu chí chấm điểm', matkhau: 'Đổi mật khẩu' };
+  var TITLES = { tongquan: 'Tổng quan', tudanhgia: 'Phiếu tự đánh giá', phieu: 'Phiếu đánh giá', duyet: 'Đánh giá cấp dưới', baocao: 'KPI tổng hợp', xeploai: 'Xếp loại chất lượng', giaoviec: 'Giao việc và theo dõi tiến độ', quantri: 'Quản trị hệ thống', tieuchi: 'Bảng tiêu chí chấm điểm', matkhau: 'Đổi mật khẩu' };
   var renderSeq = 0;
   async function render() {
     modal.innerHTML = '';
     if (!S.user) return renderLogin();
     var parts = location.hash.replace(/^#\/?/, '').split('/');
     var route = parts[0] || 'tongquan', arg = parts[1] ? decodeURIComponent(parts[1]) : '';
-    var allowed = navItems().map(function (n) { return n[0]; }).concat(S.hasReports || S.user.isAdmin ? ['phieu'] : []);
+    var allowed = navItems().map(function (n) { return n[0]; }).concat(S.hasReports || S.user.isAdmin || S.canAssign ? ['phieu'] : []);
     if (S.user.mustChange) route = 'matkhau';
     else if (allowed.indexOf(route) < 0) route = 'tongquan';
     var seq = ++renderSeq;
-    var view = shell(route, TITLES[route], ['tongquan', 'tudanhgia', 'phieu', 'duyet', 'baocao', 'xeploai'].indexOf(route) >= 0);
+    var view = shell(route, TITLES[route], ['tongquan', 'tudanhgia', 'phieu', 'duyet', 'baocao', 'xeploai', 'giaoviec'].indexOf(route) >= 0);
     try {
-      var needPeriod = ['tongquan', 'tudanhgia', 'phieu', 'duyet', 'baocao', 'xeploai'].indexOf(route) >= 0;
+      var needPeriod = ['tongquan', 'tudanhgia', 'phieu', 'duyet', 'baocao', 'xeploai', 'giaoviec'].indexOf(route) >= 0;
       if (needPeriod && !S.periodId) {
         view.innerHTML = '<div class="card">Chưa có kỳ đánh giá nào. ' + (S.user.isAdmin ? 'Vào <a href="#/quantri/periods">Quản trị › Kỳ đánh giá</a> để tạo.' : 'Vui lòng liên hệ quản trị viên.') + '</div>';
         return;
@@ -258,6 +259,7 @@
       if (route === 'tongquan') html = dashboardHtml((await Promise.all([overview(), stats()]))[0]);
       else if (route === 'duyet') html = reviewHtml(await overview());
       else if (route === 'baocao') html = reportHtml(await overview());
+      else if (route === 'giaoviec') { var gv = await Promise.all([api('assignBoard', { periodId: S.periodId }), ensureCat().catch(function () { return []; })]); GV.d = gv[0]; loadMyTasks(); html = assignHtml(arg); }
       else if (route === 'xeploai') { RT = await api('rating', { periodId: S.periodId }); html = ratingHtml(); }
       else if (route === 'tudanhgia' || route === 'phieu') {
         var d = await api('getEvaluation', { periodId: S.periodId, userId: route === 'phieu' ? arg : '' });
@@ -626,7 +628,7 @@
   function setEval(d) {
     var p = d.perms;
     if (p.canScore) loadMyTasks();
-    E = { d: d, tasks: JSON.parse(JSON.stringify(d.ev.tasks || [])), months: periodMonths(d.period), canMgr: p.canScore, sel: {}, editing: {}, orig: {} };
+    E = { d: d, tasks: JSON.parse(JSON.stringify(d.ev.tasks || [])), months: periodMonths(d.period), canMgr: p.canScore, onlyMine: !!p.limited, sel: {}, editing: {}, orig: {} };
     E.tasks.forEach(function (t) {
       if (!t.s) t.s = [0, 0, 0, 0, 0];
       if (E.canMgr && t.code && !t.locked && (t.H === undefined || t.H === null)) { t.H = 1; t.Q = 1; t.T = suggestT(t); } // điền sẵn: hoàn thành đủ, đạt yêu cầu, tiến độ theo hạn
@@ -678,7 +680,7 @@
   function taskRow(t, ti) {
     var canAll = E.d.perms.canEdit, mgr = E.canMgr, selfScore = E.d.perms.selfScore, fixing = !!E.editing[t.id];
     var edit = (canAll && (!t.locked || (selfScore && fixing))) || (mgr && t.isNew); // cán bộ sửa việc chưa bị khoá; người tự chấm bấm Sửa để sửa việc đã chấm; người phụ trách sửa việc mình vừa thêm
-    var mEdit = mgr && (!t.locked || fixing || t.isNew);                               // người phụ trách: việc đã chấm phải bấm Sửa mới đổi được
+    var mEdit = mgr && (!t.locked || fixing || t.isNew) && (!E.onlyMine || t.isNew || t.by === S.user.id);                               // người phụ trách: việc đã chấm phải bấm Sửa mới đổi được
     var months = E.months.indexOf(t.month) < 0 && t.month ? E.months.concat([t.month]) : E.months;
     var name = edit ? '<textarea rows="3" data-fld="name" data-t="' + ti + '" placeholder="' + (t.isNew ? 'Tên công việc thêm cho cấp dưới' : 'Tên công việc (ghi thật rõ việc đã làm)') + '">' + h(t.name) + '</textarea>' +
       (t.isNew ? '' : '<div class="ev-add no-print"><input type="url" data-fld="link" data-t="' + ti + '" value="' + h(t.link || '') + '" placeholder="Đường dẫn minh chứng (không bắt buộc)">' +
@@ -703,7 +705,7 @@
       cells += calcCells(t, 'm');
     }
     if (mgr) {
-      cells += '<td class="c-note">' + (mEdit ? '<textarea rows="2" data-fld="note" data-t="' + ti + '" placeholder="Nhận xét cho việc này (không bắt buộc)" aria-label="Nhận xét cho công việc ' + (ti + 1) + '">' + h(t.note || '') + '</textarea>' + (t.code ? '<div class="tx mg hq"><b>Hệ số xác nhận</b><div class="hqt">' + hqtSel(t, ti, 'H') + hqtSel(t, ti, 'Q') + hqtSel(t, ti, 'T') + '</div></div>' : '') + confirmHtml(t, ti) : (t.note ? h(t.note) : '<span class="muted">–</span>')) + '</td>' +
+      cells += '<td class="c-note">' + (mEdit ? '<textarea rows="2" data-fld="note" data-t="' + ti + '" placeholder="Nhận xét cho việc này (không bắt buộc)" aria-label="Nhận xét cho công việc ' + (ti + 1) + '">' + h(t.note || '') + '</textarea>' + (t.code ? hqHelpHtml(t, ti) + '<div class="tx mg hq"><b>Hệ số xác nhận</b><div class="hqt">' + hqtSel(t, ti, 'H') + hqtSel(t, ti, 'Q') + hqtSel(t, ti, 'T') + '</div></div>' : '') + confirmHtml(t, ti) : (t.note ? h(t.note) : '<span class="muted">–</span>')) + '</td>' +
         '<td class="no-print center nowrap">' + (mEdit ? '<button type="button" class="btn sm ok" data-act="scoreOne" data-t="' + ti + '">' + (t.code ? 'Xác nhận' : 'Chấm điểm') + '</button>' +
           (fixing && t.locked ? ' <button type="button" class="btn sm" data-act="editCancel" data-t="' + ti + '">Huỷ</button>' : '') +
           (t.isNew ? ' <button type="button" class="btn sm danger" title="Bỏ việc vừa thêm" data-act="taskDel" data-t="' + ti + '">×</button>' : '')
@@ -1424,6 +1426,129 @@
     if (mine && t.locked && t.mBy && t.mBy !== S.user.id && d.period.phase !== 'khoa') out += '<div class="no-print" style="margin-top:6px"><button type="button" class="btn sm" data-act="fbOpen" data-t="' + ti + '">' + (t.fb ? 'Sửa phản hồi' : 'Phản hồi không tán thành') + '</button></div>';
     return out;
   }
+  /* ---------- Trợ giúp chấm H, Q, T đúng Báo cáo thí điểm KPI ---------- */
+  var HELP_Q = [['1|', 'Đạt yêu cầu'], ['0.8|Có lỗi chính tả ở lần trình chính thức thứ nhất', '0,8 · Có lỗi chính tả ở lần trình chính thức thứ nhất'],
+    ['0.8|Sai thể thức thuộc trách nhiệm người soạn thảo', '0,8 · Sai thể thức thuộc trách nhiệm người soạn thảo'], ['0.8|Thiếu nội dung cơ bản cần bổ sung', '0,8 · Thiếu nội dung cơ bản, không phải làm lại phần lớn'],
+    ['0.5|Lần trình chính thức thứ hai vẫn còn lỗi chính tả', '0,5 · Lần trình chính thức thứ hai vẫn còn lỗi chính tả'], ['0.5|Sai nội dung nghiêm trọng, phải làm lại từ 50% dự thảo', '0,5 · Sai nội dung nghiêm trọng, phải làm lại từ 50% dự thảo'],
+    ['0|Sản phẩm không sử dụng được, không được chấp nhận', '0 · Sản phẩm không sử dụng được, không được chấp nhận (H cũng bằng 0)']];
+  var HELP_T = [['auto|', 'Tính theo hạn và ngày hoàn thành'], ['1|Chậm do nguyên nhân khách quan, không trừ điểm tiến độ', '1 · Chậm do nguyên nhân khách quan (không trừ)'],
+    ['0.8|Chậm dưới 01 ngày làm việc do chủ quan', '0,8 · Chậm dưới 01 ngày làm việc do chủ quan'], ['0.5|Chậm từ 01 đến dưới 02 ngày làm việc do chủ quan', '0,5 · Chậm từ 01 đến dưới 02 ngày làm việc do chủ quan'],
+    ['0|Chậm từ 02 ngày làm việc trở lên do chủ quan', '0 · Chậm từ 02 ngày làm việc trở lên do chủ quan']];
+  function hqHelpHtml(t, ti) {
+    return '<details class="tx mg hq no-print" style="display:block"><summary><b>Trợ giúp chấm đúng quy định</b></summary>' +
+      '<label>Số lượng được chấp nhận (giao ' + fmt(t.qty) + ')<input type="number" min="0" step="any" data-help="acc" data-t="' + ti + '" placeholder="' + h(t.qty) + '"></label>' +
+      '<label>Tình trạng chất lượng<select data-help="q" data-t="' + ti + '"><option value="">– chọn –</option>' + opts(HELP_Q, '') + '</select></label>' +
+      '<label>Tình trạng tiến độ<select data-help="t" data-t="' + ti + '"><option value="">– chọn –</option>' + opts(HELP_T, '') + '</select></label>' +
+      '<div class="muted small">H tính theo số lượng đã hoàn thành và được chấp nhận, không theo ước lượng của cán bộ. Mỗi sản phẩm chỉ một mức Q theo lỗi nặng nhất; sửa văn phong, bố cục không tính là lỗi. Việc không có hạn hoặc chậm do khách quan thì T = 1. Sản phẩm thiếu sót nhưng đã được chấp nhận vẫn tính đủ H, phần thiếu sót trừ ở Q.</div></details>';
+  }
+  function addNote(t, text) { if (text && String(t.note || '').indexOf(text) < 0) t.note = (t.note ? String(t.note).replace(/\s+$/, '') + '. ' : '') + text; }
+  document.addEventListener('change', function (ev) {
+    var el = ev.target;
+    if (!E || !el.dataset || !el.dataset.help) return;
+    var t = E.tasks[+el.dataset.t], v = el.value;
+    if (!t || v === '') return;
+    if (el.dataset.help === 'acc') {
+      var r = Number(v) / (Number(t.qty) || 1);
+      if (!(r >= 0)) return;
+      t.H = r >= 1 ? 1 : r >= 0.8 ? 0.8 : r >= 0.6 ? 0.5 : 0;
+      if (r < 1) addNote(t, 'Được chấp nhận ' + fmt(Number(v)) + '/' + fmt(t.qty) + ' (' + Math.round(r * 100) + '%)');
+    } else {
+      var p = v.split('|'), k = el.dataset.help === 'q' ? 'Q' : 'T';
+      t[k] = p[0] === 'auto' ? suggestT(t) : Number(p[0]);
+      if (k === 'Q' && t.Q === 0) t.H = 0;
+      addNote(t, p[1]);
+    }
+    redrawTable();
+    toast('Đã đặt H = ' + fmt(t.H) + ', Q = ' + fmt(t.Q) + ', T = ' + fmt(t.T) + '. Kiểm tra lại rồi bấm Xác nhận.');
+  });
+
+  /* ---------- Trang Giao việc: giao việc mới và theo dõi tiến độ, cảnh báo ---------- */
+  var GV = { d: null, lv: '', who: '', q: '', pick: {} };
+  var GV_LV = { late: ['Quá hạn', 'b-red'], soon: ['Sắp đến hạn', 'b-amber'], ok: ['Trong hạn', 'b-green'], nodl: ['Chưa đặt hạn', 'b-gray'], wait: ['Chờ xác nhận', 'b-amber'], fb: ['Có phản hồi', 'b-amber'], review: ['Chờ đánh giá', 'b-blue'], done: ['Đã đánh giá', 'b-green'] };
+  function gvDays(a, b) { return Math.round((Date.parse(a + 'T00:00:00Z') - Date.parse(b + 'T00:00:00Z')) / 86400000); }
+  /** Mức cảnh báo của một việc đã giao. */
+  function gvLevel(t) {
+    var today = GV.d.today;
+    if (t.locked) return { k: 'done', x: '' };
+    if (t.acc === 'fb') return { k: 'fb', x: '' };
+    if (t.doneDate || (t.progress != null && t.progress >= 100)) return { k: 'review', x: t.deadline && t.doneDate && t.doneDate > t.deadline ? 'xong chậm ' + gvDays(t.doneDate, t.deadline) + ' ngày' : '' };
+    if (t.deadline && t.deadline < today) return { k: 'late', x: gvDays(today, t.deadline) + ' ngày' };
+    if (t.acc === 'cho') return { k: 'wait', x: '' };
+    if (!t.deadline) return { k: 'nodl', x: '' };
+    var left = gvDays(t.deadline, today);
+    return left <= 2 ? { k: 'soon', x: left === 0 ? 'hôm nay' : 'còn ' + left + ' ngày' } : { k: 'ok', x: 'còn ' + left + ' ngày' };
+  }
+  function assignHtml(tab) {
+    tab = tab === 'moi' ? 'moi' : 'theodoi';
+    var tabs = '<div class="tabs"><button data-act="gvTab" data-t="theodoi" class="' + (tab === 'theodoi' ? 'on' : '') + '">Theo dõi tiến độ</button><button data-act="gvTab" data-t="moi" class="' + (tab === 'moi' ? 'on' : '') + '">Giao việc mới</button></div>';
+    return tabs + (tab === 'moi' ? assignFormHtml() : '<div id="gvBody">' + assignBoardHtml() + '</div>');
+  }
+  function assignBoardHtml() {
+    var d = GV.d, out = d.tasks.filter(function (t) { return t.dir === 'out'; }), inn = d.tasks.filter(function (t) { return t.dir === 'in'; }), cnt = {};
+    out.forEach(function (t) { t.lv = gvLevel(t); cnt[t.lv.k] = (cnt[t.lv.k] || 0) + 1; });
+    inn.forEach(function (t) { t.lv = gvLevel(t); });
+    var keys = ['late', 'soon', 'ok', 'nodl', 'wait', 'fb', 'review', 'done'], openN = out.length - (cnt.done || 0);
+    var tiles = '<div class="stats"><div class="stat hl"><div class="v">' + out.length + '</div><div class="l">Việc tôi đã giao trong kỳ</div><div class="x">' + openN + ' việc chưa đánh giá</div></div>' +
+      '<div class="stat s-none"><div class="v">' + (cnt.late || 0) + '</div><div class="l">Quá hạn</div></div><div class="stat"><div class="v">' + (cnt.soon || 0) + '</div><div class="l">Sắp đến hạn (trong 2 ngày)</div></div>' +
+      '<div class="stat"><div class="v">' + ((cnt.wait || 0) + (cnt.fb || 0)) + '</div><div class="l">Chờ xác nhận / có phản hồi</div></div>' +
+      '<div class="stat"><div class="v">' + (cnt.review || 0) + '</div><div class="l">Đã báo xong, chờ tôi đánh giá</div></div><div class="stat s-done"><div class="v">' + (cnt.done || 0) + '</div><div class="l">Đã đánh giá</div></div></div>';
+    var chart = colsHtml(keys.map(function (k) { return { label: GV_LV[k][0], v: cnt[k] || 0, attrs: 'data-act="gvLv" data-k="' + k + '"', on: GV.lv === k, title: 'Bấm để lọc: ' + GV_LV[k][0] }; }));
+    var people = {}; out.forEach(function (t) { people[t.userId] = d.names[t.userId] || t.userId; });
+    var q = GV.q.trim().toLowerCase();
+    var rows = out.filter(function (t) { return (!GV.lv || t.lv.k === GV.lv) && (!GV.who || t.userId === GV.who) && (!q || (t.name + ' ' + t.code + ' ' + (d.names[t.userId] || '')).toLowerCase().indexOf(q) >= 0); })
+      .sort(function (a, b) { return keys.indexOf(a.lv.k) - keys.indexOf(b.lv.k) || (a.deadline || '9999').localeCompare(b.deadline || '9999'); });
+    var bar = function (t) { var p = t.locked ? (t.progress == null ? 100 : t.progress) : t.progress == null ? (t.doneDate ? 100 : 0) : t.progress; return '<div class="gvbar"><i style="width:' + Math.max(0, Math.min(100, p)) + '%"></i></div><div class="muted small">' + p + '%' + (t.doneDate ? ' · xong ' + h(fdate(t.doneDate)) : '') + '</div>'; };
+    var row = function (t, mineIn) {
+      var who = mineIn ? (d.names[t.by] || t.by) : (d.names[t.userId] || t.userId);
+      return '<tr><td><b>' + h(who) + '</b></td><td>' + (t.code ? '<span class="badge b-gray">' + h(t.code) + '</span> ' : '') + h(t.name) + '<div class="muted small">Số lượng ' + fmt(t.qty) + (t.unit ? ' ' + h(t.unit) : '') + (t.src ? ' · nối tiếp' : '') + (t.ext ? ' · đã gia hạn ' + t.ext + ' lần' : '') + '</div></td>' +
+        '<td class="nowrap">' + (t.deadline ? h(fdate(t.deadline)) : '<span class="muted">–</span>') + '</td><td style="min-width:120px">' + bar(t) + '</td>' +
+        '<td><span class="badge ' + GV_LV[t.lv.k][1] + '">' + GV_LV[t.lv.k][0] + '</span>' + (t.lv.x ? '<div class="muted small">' + h(t.lv.x) + '</div>' : '') + '</td>' +
+        '<td class="nowrap">' + (t.locked ? 'H ' + h(fmt(Number(t.h))) + ' · Q ' + h(fmt(Number(t.q))) + ' · T ' + h(fmt(Number(t.t))) + '<div class="small"><b>' + f4(t.score) + '</b> / ' + f4(t.g) + ' điểm</div>' : '<span class="muted">chưa chấm</span>') + '</td>' +
+        '<td class="right no-print"><a class="btn sm' + (!mineIn && t.lv.k === 'review' ? ' primary' : '') + '" href="#/' + (mineIn ? 'tudanhgia' : 'phieu/' + encodeURIComponent(t.userId)) + '">' + (mineIn ? 'Mở phiếu của tôi' : t.locked ? 'Xem phiếu' : 'Mở phiếu để chấm') + '</a></td></tr>';
+    };
+    var head = function (c) { return '<thead><tr><th>' + c + '</th><th>Công việc</th><th>Hạn</th><th>Tiến độ</th><th>Cảnh báo</th><th>Kết quả chấm</th><th class="no-print"></th></tr></thead>'; };
+    return tiles + '<div class="grid cols-2"><div class="card"><h2>Việc đã giao theo mức cảnh báo</h2>' + chart + '<p class="muted small">Bấm một cột để lọc bảng bên dưới; bấm lại để bỏ lọc.</p></div>' +
+      '<div class="card"><h2>Các mức cảnh báo</h2><p class="small" style="margin:0;line-height:1.9"><span class="badge b-red">Quá hạn</span> đã qua hạn mà chưa báo xong · <span class="badge b-amber">Sắp đến hạn</span> còn từ 0 đến 2 ngày · <span class="badge b-green">Trong hạn</span> còn trên 2 ngày · ' +
+      '<span class="badge b-gray">Chưa đặt hạn</span> · <span class="badge b-amber">Chờ xác nhận</span> cán bộ chưa nhận việc · <span class="badge b-amber">Có phản hồi</span> cán bộ báo việc chưa hợp lý · <span class="badge b-blue">Chờ đánh giá</span> cán bộ đã báo xong · <span class="badge b-green">Đã đánh giá</span>.</p>' +
+      '<p class="muted small">Chấm kết quả việc đã giao như chấm KPI: mở phiếu của cán bộ, chọn H, Q, T cho việc mình giao rồi bấm Xác nhận. Việc do người khác giao thì người đó hoặc người phụ trách trực tiếp chấm.</p></div></div>' +
+      '<div class="card"><h2>Việc tôi giao (' + rows.length + '/' + out.length + ')</h2><div class="usebar no-print" style="margin-bottom:10px"><label>Người nhận<select id="gvWho"><option value="">Tất cả</option>' + opts(Object.keys(people).map(function (k) { return [k, people[k]]; }), GV.who) + '</select></label>' +
+      '<label>Mức cảnh báo<select id="gvLvSel"><option value="">Tất cả</option>' + opts(keys.map(function (k) { return [k, GV_LV[k][0]]; }), GV.lv) + '</select></label><label class="grow">Tìm theo tên việc, mã, người nhận<input type="search" id="gvQ" value="' + h(GV.q) + '"></label></div>' +
+      '<div class="tbl-wrap"><table class="tbl">' + head('Người nhận') + '<tbody>' + (rows.map(function (t) { return row(t, false); }).join('') || '<tr><td colspan="7" class="muted">Chưa có việc nào khớp. Vào thẻ “Giao việc mới” để giao.</td></tr>') + '</tbody></table></div></div>' +
+      (inn.length ? '<div class="card"><h2>Việc tôi được giao (' + inn.length + ')</h2><div class="tbl-wrap"><table class="tbl">' + head('Người giao') + '<tbody>' + inn.map(function (t) { return row(t, true); }).join('') + '</tbody></table></div></div>' : '');
+  }
+  function assignFormHtml() {
+    var d = GV.d, units = {}, types = catTypes();
+    d.people.forEach(function (u) { (units[u.unitId] || (units[u.unitId] = [])).push(u); });
+    var list = Object.keys(units).map(function (uid) {
+      return '<div class="gvunit"><b>' + h(unitName(uid) || uid) + '</b>' + units[uid].sort(function (a, b) { return a.fullName.localeCompare(b.fullName, 'vi'); }).map(function (u) {
+        return '<label class="ck" data-name="' + h(u.fullName.toLowerCase()) + '"><input type="checkbox" data-gvp="' + h(u.id) + '"' + (GV.pick[u.id] ? ' checked' : '') + '>' + h(u.fullName) + ' <span class="muted small">' + h(u.title || LEVEL[u.level]) + '</span></label>';
+      }).join('') + '</div>';
+    }).join('');
+    if (!d.people.length) return '<div class="card">Anh/chị chưa có ai trong phạm vi được giao việc. Phạm vi gồm: người do mình phụ trách đánh giá, mọi cấp dưới trong cây phụ trách, và (với Trưởng, Phó đơn vị) người cấp thấp hơn trong đơn vị mình cùng các đơn vị con.</div>';
+    return '<div class="grid cols-2"><div class="card"><h2>1. Chọn người nhận việc (' + d.people.length + ' người trong phạm vi)</h2><input type="search" id="gvPQ" placeholder="Tìm theo họ tên…" style="margin-bottom:8px"><div class="gvpeople" id="gvPeople">' + list + '</div>' +
+      '<p class="muted small">Phạm vi giao việc: người do anh/chị phụ trách đánh giá hoặc quản lý vượt cấp; mọi cấp dưới trong cây phụ trách; Trưởng, Phó đơn vị giao cho người cấp thấp hơn trong đơn vị mình và các đơn vị con.</p></div>' +
+      '<div class="card"><h2>2. Nội dung công việc</h2>' +
+      '<label class="f"><span>Loại sản phẩm (Danh mục sản phẩm)</span><select id="gvType"><option value="">– việc ngoài danh mục –</option>' + opts(types, '') + '</select></label>' +
+      '<label class="f"><span>Mã sản phẩm</span><select id="gvCode"><option value="">– chọn loại sản phẩm trước –</option></select></label>' +
+      '<label class="f"><span>Tên công việc cụ thể (để trống thì lấy tên của mã)</span><textarea id="gvName" rows="2" placeholder="Ví dụ: Báo cáo kết quả giám sát quý IV"></textarea></label>' +
+      '<div class="usebar"><label>Số lượng<input type="number" id="gvQty" min="0.01" step="any" value="1"></label><label>Hạn hoàn thành<input type="date" id="gvDl" min="' + h(d.today) + '"></label></div>' +
+      (MYT.tasks.length ? '<label class="f" style="margin-top:10px"><span>Giao nối tiếp từ nhiệm vụ của tôi (không bắt buộc)</span><select id="gvSrc"><option value="">– không nối tiếp –</option>' + opts(MYT.tasks.map(function (m) { return [m.id, m.name.slice(0, 90)]; }), '') + '</select></label>' : '') +
+      '<div class="actions" style="margin-top:14px"><button class="btn primary" data-act="gvSend">Giao việc cho những người đã chọn</button></div>' +
+      '<p class="muted small">Việc được giao nằm trong phiếu của cán bộ ở trạng thái Chờ xác nhận. Việc theo mã danh mục được chấm bằng H, Q, T; việc ngoài danh mục được chấm bằng 5 mức A–E.</p></div></div>';
+  }
+  function gvRedraw() { var b = document.getElementById('gvBody'); if (b) b.innerHTML = assignBoardHtml(); }
+  document.addEventListener('input', function (ev) {
+    if (ev.target.id === 'gvQ') { GV.q = ev.target.value; var pos = ev.target.selectionStart; gvRedraw(); var n = document.getElementById('gvQ'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* bỏ qua */ } } }
+    if (ev.target.id === 'gvPQ') { var q = ev.target.value.trim().toLowerCase(); document.querySelectorAll('#gvPeople label.ck').forEach(function (l) { l.style.display = !q || l.dataset.name.indexOf(q) >= 0 ? '' : 'none'; }); }
+  });
+  document.addEventListener('change', function (ev) {
+    var el = ev.target;
+    if (el.id === 'gvWho') { GV.who = el.value; gvRedraw(); }
+    if (el.id === 'gvLvSel') { GV.lv = el.value; gvRedraw(); }
+    if (el.dataset && el.dataset.gvp) GV.pick[el.dataset.gvp] = el.checked;
+    if (el.id === 'gvType') { var c = document.getElementById('gvCode'); c.innerHTML = '<option value="">– chọn mã –</option>' + opts((S.cat || []).filter(function (x) { return x.active && x.type === el.value; }).map(function (x) { return [x.id, x.id + ' · ' + String(x.name).slice(0, 80) + ' (' + x.level + ', ' + f4(x.point) + 'đ/' + (x.unit || 'sp') + ')']; }), ''); }
+  });
+
   /* ---------- Giao – nhận nhiệm vụ: trạng thái từng việc, xác nhận, phản hồi, giao lại, gia hạn, giao nối tiếp ---------- */
   var MYT = { key: '', tasks: [] }; // các việc của chính người đang đăng nhập ở kỳ này, để chọn làm nhiệm vụ nguồn khi giao nối tiếp
   function loadMyTasks() {
@@ -1463,7 +1588,7 @@
     if (boss && open) {
       if (x.acc === 'fb') btn += '<button type="button" class="btn sm ok" data-act="taskRe" data-t="' + ti + '">Giao lại</button>';
       if (!t.locked && t.by === S.user.id) btn += '<button type="button" class="btn sm danger" data-act="taskDrop" data-t="' + ti + '">Rút việc</button>';
-      if (!t.locked) btn += '<span class="ext"><input type="date" id="ext' + ti + '" min="' + h(t.deadline || '') + '" aria-label="Hạn hoàn thành mới"><button type="button" class="btn sm" data-act="taskExt" data-t="' + ti + '">Gia hạn</button></span>';
+      if (!t.locked && (!E.onlyMine || t.by === S.user.id)) btn += '<span class="ext"><input type="date" id="ext' + ti + '" min="' + h(t.deadline || '') + '" aria-label="Hạn hoàn thành mới"><button type="button" class="btn sm" data-act="taskExt" data-t="' + ti + '">Gia hạn</button></span>';
     }
     if (btn) out += '<div class="flow no-print">' + btn + '</div>';
     return out;
@@ -1475,6 +1600,21 @@
       S.ov = null; toast(msg);
     });
   }
+  ACT.gvTab = function (el) { location.hash = '#/giaoviec/' + el.dataset.t; };
+  ACT.gvLv = function (el) { GV.lv = GV.lv === el.dataset.k ? '' : el.dataset.k; gvRedraw(); };
+  ACT.gvSend = function (el) {
+    var ids = Object.keys(GV.pick).filter(function (k) { return GV.pick[k]; }), code = $('#gvCode').value, name = $('#gvName').value.trim();
+    if (!ids.length) return toast('Chưa chọn người nhận việc.', true);
+    if (!code && !name) return toast('Chọn mã sản phẩm hoặc ghi tên công việc.', true);
+    if (!confirm('Giao việc này cho ' + ids.length + ' người đã chọn?')) return;
+    run(el, async function () {
+      var r = await api('assignMany', { periodId: S.periodId, userIds: ids, task: { code: code, name: name, qty: $('#gvQty').value, deadline: $('#gvDl').value, src: ($('#gvSrc') || {}).value || '' } });
+      var bad = r.results.filter(function (x) { return !x.ok; });
+      toast('Đã giao cho ' + (r.results.length - bad.length) + ' người.' + (bad.length ? ' Không giao được cho ' + bad.length + ' người: ' + bad.map(function (x) { return (GV.d.names[x.userId] || x.userId) + ' (' + x.error + ')'; }).join('; ') : ''), !!bad.length);
+      GV.pick = {}; S.ov = null;
+      location.hash = '#/giaoviec/theodoi'; render();
+    });
+  };
   ACT.taskOk = function (el) { flowCall(el, 'taskAccept', { ok: 1 }, 'Đã xác nhận nhiệm vụ.'); };
   ACT.taskFb = function (el) {
     var note = prompt('Lý do nhiệm vụ này chưa hợp lý (mỗi nhiệm vụ chỉ phản hồi được một lần):');

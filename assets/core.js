@@ -1117,12 +1117,13 @@ function KPI_createCore(store, env) {
     var period = needPeriod(d.periodId);
     if (phaseOf(period) === 'khoa') err('Kỳ đánh giá đã khoá.');
     var owner = find('Users', d.userId) || err('Không tìm thấy cán bộ.');
-    var boss = isBoss(me, owner);
-    if (!boss && !canAssign(me, owner)) err('Chỉ cấp trên của cán bộ mới thực hiện được.');
+    var admin = on(me.isAdmin) && str(me.id) !== str(owner.id), boss = isBoss(me, owner); // quản trị được gia hạn, giao lại, rút việc đã giao thay người giao
+    if (!boss && !admin && !canAssign(me, owner)) err('Chỉ cấp trên của cán bộ hoặc quản trị mới thực hiện được.');
     var ev = evalOf(period.id, owner.id) || err('Cán bộ chưa có phiếu ở kỳ này.');
     var tasks = loadTasks(ev.id), t = tasks.filter(function (x) { return x.id === str(d.taskId); })[0] || err('Không tìm thấy công việc.');
-    if (!boss && str(t.by) !== str(me.id)) err('Anh/chị chỉ thao tác được với công việc do chính mình giao.');
-    return { period: period, ev: ev, tasks: tasks, t: t, owner: owner };
+    if (!boss && admin && !str(t.by)) err('Quản trị chỉ thao tác được với công việc do cấp trên giao, không phải việc cán bộ tự kê.');
+    if (!boss && !admin && str(t.by) !== str(me.id)) err('Anh/chị chỉ thao tác được với công việc do chính mình giao.');
+    return { period: period, ev: ev, tasks: tasks, t: t, owner: owner, admin: admin };
   }
   function saveTaskSet(c, me, action, note) {
     writeTasks(c.ev.id, c.owner.id, c.period, c.tasks);
@@ -1146,7 +1147,7 @@ function KPI_createCore(store, env) {
     var c = bossTask(me, d), t = c.t, x = t.x || {};
     if (on(d.drop)) {
       if (t.locked) err('Công việc đã được đánh giá, không rút được.');
-      if (str(t.by) !== str(me.id)) err('Chỉ rút được công việc do chính anh/chị giao.');
+      if (str(t.by) !== str(me.id) && !(c.admin && str(t.by))) err('Chỉ rút được công việc do chính anh/chị giao.');
       c.tasks.splice(c.tasks.indexOf(t), 1);
       evidenceOf(c.owner.id, c.period.id).filter(function (e) { return str(e.taskId) === t.id; }).forEach(dropEvidence);
       return saveTaskSet(c, me, 'Rút nhiệm vụ đã giao', '“' + t.name.slice(0, 80) + '”');

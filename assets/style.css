@@ -223,16 +223,60 @@ ul.tree > li { border-left-color: var(--pri); }
   .sheet tfoot .c-tt, .sheet tfoot .c-name { z-index: 2; background: #f5f8fd; }
 }
 @media (max-width: 860px) {
-  .shell { grid-template-columns: 1fr; }
-  .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 10px; }
-  .side .brand { width: 100%; padding: 0 4px 8px; }
-  .side a.nav { padding: 6px 10px; font-size: 14px; }
-  .side .who { margin: 0 0 0 auto; padding: 0; border: 0; display: flex; align-items: center; gap: 8px; }
-  .side .who span { display: none; } .side .who button { margin: 0; width: auto; padding: 4px 10px; }
-  .main { padding: 16px 16px 60px; }
+  /* ----- Điện thoại: menu trượt từ trái, thanh tiêu đề dính trên cùng ----- */
+  .shell, .shell.side-off { display: block; }
+  .side, .shell.side-off .side { display: flex; position: fixed; top: 0; left: 0; bottom: 0; width: min(84vw, 300px); height: auto; z-index: 60; overflow-y: auto;
+    transform: translateX(-104%); transition: transform .22s ease; }
+  .shell.nav-open .side { transform: none; box-shadow: 0 0 0 100vmax rgba(10, 20, 50, .5); }
+  .side a.nav { padding: 12px 14px; font-size: 16px; }
+  .main { padding: 0 12px calc(72px + env(safe-area-inset-bottom)); }
+  .top { position: sticky; top: 0; z-index: 20; margin: 0 -12px 12px; padding: 10px 12px; background: rgba(243, 246, 251, .94); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); gap: 8px; }
+  .top h1 { font-size: 19px; line-height: 1.25; margin: 0; }
+  .top .period { width: 100%; } .top .period select { flex: 1; min-width: 0; }
   .cols-2 { grid-template-columns: 1fr; }
   .person { grid-template-columns: 1fr; gap: 6px; } .person .rt { text-align: left; }
+  .card { padding: 14px; border-radius: 14px; margin-bottom: 12px; }
+  .card h2 { font-size: 17px; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .stat { padding: 10px 12px 10px 14px; } .stat .v { font-size: 22px; } .stat .l { font-size: 12px; }
+  .stat.hl { grid-column: 1 / -1; }
+  .tabs { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 6px; padding-bottom: 6px; -webkit-overflow-scrolling: touch; } .tabs button { flex: none; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; } .actions .btn { flex: 1 1 46%; justify-content: center; text-align: center; }
+  input, select, textarea { font-size: 16px; } /* iPhone không tự phóng to khi chạm vào ô nhập */
+  .tbl th, .tbl td { padding: 8px 8px; font-size: 13px; }
+  #toast { left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); }
+
+  /* ----- Phiếu đánh giá: mỗi công việc là một thẻ thay cho bảng 20 cột ----- */
+  .tbl-wrap.sheet { max-height: none; overflow: visible; border: 0; border-radius: 0; }
+  table.sheet, table.sheet tbody, table.sheet tfoot { display: block; min-width: 0; }
+  table.sheet thead { display: none; }
+  table.sheet tbody tr { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; padding: 12px; margin-bottom: 12px; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+  table.sheet tbody tr.locked { background: #fafcff; }
+  .sheet tbody td { display: block; grid-column: 1 / -1; border: 0; padding: 0; min-width: 0 !important; width: auto; background: none !important; text-align: left; }
+  .sheet tbody td.c-tt { display: flex; align-items: center; gap: 8px; font-weight: 800; color: var(--pri-d); font-size: 13px; }
+  .sheet tbody td.c-tt::before { content: "Công việc "; }
+  .sheet .pick1 { flex-direction: row-reverse; gap: 8px; justify-content: flex-end; } .sheet .pick1 input { width: 22px; height: 22px; }
+  .sheet tbody td:nth-child(3), .sheet tbody td:nth-child(4), .sheet tbody td:nth-child(5) { grid-column: span 2; font-size: 13px; }
+  .sheet tbody td:nth-child(3)::before { content: "Sản phẩm"; } .sheet tbody td:nth-child(4)::before { content: "Số lượng"; } .sheet tbody td:nth-child(5)::before { content: "Tháng"; }
+  .sheet tbody td:nth-child(3)::before, .sheet tbody td:nth-child(4)::before, .sheet tbody td:nth-child(5)::before, .sheet tbody td.calc::before, .sheet tbody td.c-note::before {
+    display: block; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 2px; }
+  .sheet tbody td select, .sheet tbody td input[type=number], .sheet td.lv select, .sheet select[data-fld=product], .sheet select[data-fld=month] { width: 100%; }
+  .sheet tbody td.lv { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .sheet tbody td.lv::before { content: attr(data-l); flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; font-weight: 800; font-size: 13px; background: #dbeafe; color: #1e3a8a; }
+  .sheet tbody td.lv[data-g=m]::before { background: #ede9fe; color: #4c1d95; }
+  .sheet tbody td.lv[data-l=A] { margin-top: 6px; padding-top: 10px; border-top: 1px dashed var(--line); }
+  .sheet tbody td.lv.cat { display: block; } .sheet tbody td.lv.cat::before { display: none; }
+  .sheet tbody td.calc { grid-column: span 2; text-align: center; background: #f3fbf9 !important; border-radius: 10px; padding: 6px 4px; }
+  .sheet tbody td.calc::before { content: attr(data-l); text-align: center; }
+  .sheet tbody td.c-note::before { content: "Nhận xét, xác nhận của lãnh đạo"; }
+  .sheet tbody td.c-note { margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--line); }
+  .sheet tbody td.no-print.center { text-align: right; white-space: normal; } .sheet tbody td.no-print .btn { margin: 2px 0 2px 6px; }
+  .sheet .tx input[type=date], .sheet .tx input[type=number] { width: 100%; } .sheet .tx label { flex: 1 1 44%; }
+  table.sheet tfoot tr { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #f5f8fd; }
+  .sheet tfoot td { display: inline; position: static; border: 0; padding: 0; background: none; font-size: 13px; } .sheet tfoot td:empty { display: none; }
+  .sheet tfoot td.num { font-weight: 800; margin-right: 10px; }
 }
+
 @media print {
   @page { size: A4 landscape; margin: 10mm; }
   body { background: #fff; font-size: 12px; }
@@ -281,3 +325,8 @@ ul.tree > li { border-left-color: var(--pri); }
 .usebar label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); flex: 0 1 170px; min-width: 140px; }
 .usebar label.grow { flex: 1 1 240px; }
 .usebar input, .usebar select { width: 100%; }
+
+/* Giao – nhận nhiệm vụ */
+.sheet .flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.sheet .flow .ext { display: inline-flex; gap: 4px; align-items: center; }
+.sheet .flow .ext input { width: 150px; padding: 3px 6px; font-size: 13px; }

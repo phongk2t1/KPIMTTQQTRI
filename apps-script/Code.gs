@@ -258,13 +258,65 @@ function doPost(e) {
     catch (x) { return json_({ ok: false, error: 'Máy chủ đang bận ghi dữ liệu, vui lòng bấm lại sau ít giây.' }); }
   }
   try {
-    var core = KPI_createCore(makeSheetStore_(getSpreadsheet_()), makeEnv_());
+    var ss = getSpreadsheet_(), env = makeEnv_();
+    env.usage = usageEnv_(ss); // nhật ký sử dụng
+    env.locked = !!lock;       // chỉ gộp nhật ký cũ khi đang giữ khoá ghi
+    var core = KPI_createCore(makeSheetStore_(ss), env);
     return json_(core.handle(req));
   } catch (x) {
     return json_({ ok: false, error: 'Lỗi máy chủ: ' + x.message });
   } finally {
     if (lock) lock.releaseLock();
   }
+}
+
+/* ---------- Nhật ký sử dụng ----------
+ * NhatKy: mỗi lượt đăng nhập, xem, thêm, sửa, xoá một dòng, chỉ ghi nối đuôi (appendRow) nên không làm chậm thao tác chính.
+ * NhatKyTongHop: số lượt theo tháng – người – chức năng của những dòng đã quá hạn lưu chi tiết.
+ * Hai trang tự tạo khi cần; không thuộc KPI_TABLES. */
+function usageEnv_(ss) {
+  var HEAD = { NhatKy: ['Thời gian', 'CCCD', 'Loại', 'Chức năng', 'Đối tượng', 'Kết quả (trống = thành công)'],
+    NhatKyTongHop: ['Tháng', 'CCCD', 'Loại', 'Chức năng', 'Số lượt', 'Trong đó lỗi'] };
+  var cache = CacheService.getScriptCache(), sheets = {};
+  function sheet(name) {
+    if (sheets[name]) return sheets[name];
+    var sh = ss.getSheetByName(name);
+    if (!sh) {
+      sh = ss.insertSheet(name);
+      sh.getRange(1, 1, sh.getMaxRows(), HEAD[name].length).setNumberFormat('@');
+      sh.getRange(1, 1, 1, HEAD[name].length).setValues([HEAD[name]]).setFontWeight('bold').setBackground('#dbeafe');
+      sh.setFrozenRows(1);
+    }
+    return (sheets[name] = sh);
+  }
+  function txt(v) { return v instanceof Date ? Utilities.formatDate(v, 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd HH:mm:ss') : String(v).replace(/^'/, ''); }
+  function read(name) {
+    var sh = sheet(name), n = sh.getLastRow();
+    return n < 2 ? [] : sh.getRange(2, 1, n - 1, HEAD[name].length).getValues().map(function (r) { return r.map(txt); });
+  }
+  return {
+    add: function (row) { sheet('NhatKy').appendRow(row.map(function (v) { return "'" + String(v); }).map(function (v) { return v === "'" ? '' : v; })); },
+    head: function () { var sh = sheet('NhatKy'), n = sh.getLastRow(); return { count: Math.max(n - 1, 0), first: n < 2 ? '' : txt(sh.getRange(2, 1).getValue()) }; },
+    rows: function () { return read('NhatKy'); },
+    drop: function (n) {
+      var sh = sheet('NhatKy'), have = sh.getLastRow() - 1;
+      if (n <= 0 || have <= 0) return;
+      if (n >= have) sh.getRange(2, 1, have, HEAD.NhatKy.length).clearContent(); // không xoá được hết các dòng dưới dòng tiêu đề cố định
+      else sh.deleteRows(2, n);
+    },
+    sums: function () { return read('NhatKyTongHop'); },
+    setSums: function (rows) {
+      var sh = sheet('NhatKyTongHop'), n = sh.getLastRow(), w = HEAD.NhatKyTongHop.length;
+      if (n > 1) sh.getRange(2, 1, n - 1, w).clearContent();
+      if (rows.length) sh.getRange(2, 1, rows.length, w).setNumberFormat('@').setValues(rows);
+    },
+    once: function (key, seconds) { // true nếu trong 'seconds' giây vừa qua chưa gặp khoá này
+      var k = 'kpi:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, key, Utilities.Charset.UTF_8));
+      if (cache.get(k)) return false;
+      cache.put(k, '1', Math.min(Math.max(seconds, 1), 21600));
+      return true;
+    }
+  };
 }
 
 /** Tạo các trang tính còn thiếu, kèm dòng tiêu đề tiếng Việt. */

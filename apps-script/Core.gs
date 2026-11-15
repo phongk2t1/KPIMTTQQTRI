@@ -141,6 +141,24 @@ function KPI_taskCalc(t, key, rule) {
   }
   return null;
 }
+/* ---------- Nhật ký sử dụng ----------
+ * Mỗi lượt đăng nhập và mỗi thao tác xem, thêm, sửa, xoá ghi một dòng vào trang tính NhatKy (chỉ ghi nối đuôi, không đọc lại).
+ * Để không phình dữ liệu: cùng một người xem cùng một nội dung trong viewGap giây chỉ ghi một lần;
+ * dòng cũ hơn keepDays ngày (hoặc vượt maxRows dòng) được gộp thành số lượt theo tháng – người – chức năng ở trang NhatKyTongHop rồi xoá. */
+var KPI_LOG = { keepDays: 90, maxRows: 20000, viewGap: 600 };
+var KPI_LOG_KINDS = { dangnhap: 'Đăng nhập', xem: 'Xem', them: 'Thêm', sua: 'Sửa', xoa: 'Xoá', khac: 'Khác' };
+var KPI_LOG_ACTIONS = {
+  login: ['dangnhap', 'Đăng nhập'], bootstrap: ['xem', 'Mở ứng dụng'], changePassword: ['sua', 'Đổi mật khẩu'],
+  overview: ['xem', 'Xem tổng quan, KPI tổng hợp'], stats: ['xem', 'Xem thống kê tổng quan'], getEvaluation: ['xem', 'Xem phiếu đánh giá'],
+  tasksFrom: ['xem', 'Lấy việc từ kỳ trước'], saveSelf: ['sua', 'Lưu / nộp phiếu tự đánh giá'], review: ['sua', 'Duyệt / trả lại phiếu'],
+  score: ['sua', 'Chấm điểm, nhận xét, giao việc'], reopen: ['sua', 'Mở lại phiếu đã chốt'], upload: ['them', 'Tải tệp lên'],
+  feedback: ['sua', 'Phản hồi không tán thành'], evidenceAdd: ['them', 'Thêm minh chứng'], evidenceRemove: ['xoa', 'Xoá minh chứng'], evidenceGet: ['xem', 'Mở minh chứng'],
+  catalog: ['xem', 'Xem danh mục sản phẩm'], adminCatalogSave: ['sua', 'Thêm / sửa mã danh mục'], adminCatalogDelete: ['xoa', 'Xoá mã danh mục'], adminCatalogImport: ['them', 'Nạp danh mục từ Excel'],
+  libraryFind: ['xem', 'Tìm trong kho việc mẫu'], adminLibraryList: ['xem', 'Xem kho việc mẫu'], adminLibrarySave: ['sua', 'Thêm / sửa việc mẫu'], adminLibraryDelete: ['xoa', 'Xoá việc mẫu'], adminLibraryImport: ['them', 'Nạp kho việc mẫu từ Excel'],
+  rating: ['xem', 'Xem bảng xếp loại'], ratingPropose: ['sua', 'Đề xuất xếp loại'], ratingStaff: ['sua', 'Tham mưu xếp loại'], ratingVote: ['sua', 'Biểu quyết xếp loại'], ratingDecide: ['sua', 'Quyết định xếp loại'], ratingReopen: ['sua', 'Mở lại xếp loại'],
+  adminList: ['xem', 'Mở trang quản trị'], adminSave: ['sua', 'Thêm / sửa người dùng, đơn vị, kỳ'], adminImport: ['them', 'Nạp danh sách từ Excel'], adminDelete: ['xoa', 'Xoá người dùng, đơn vị, kỳ'],
+  adminResetPassword: ['sua', 'Cấp lại mật khẩu'], adminSaveConfig: ['sua', 'Lưu cấu hình']
+};
 var KPI_MAX_EVIDENCE = 3; // số minh chứng tối đa của một công việc
 
 // Mẫu chưa quy định ngưỡng xếp loại; quản trị viên tự thêm trong mục Quản trị nếu cần.
@@ -1727,12 +1745,12 @@ function KPI_createCore(store, env) {
     return str(period.name) + ' – ' + str(header.userId) + ': ' + list.length + ' việc, ' + str(header.status);
   }
 
-  function handle(req) {
+  function run(req) {
     try {
-      req = req || {};
       var d = req.data || {};
       if (req.action === 'login') return { ok: true, data: login(d) };
       var me = auth(req.token);
+      req._me = me; // để ghi nhật ký sử dụng
       if (!Object.prototype.hasOwnProperty.call(A, req.action)) err('Yêu cầu không hợp lệ.');
       if (req.action.indexOf('admin') === 0 && !on(me.isAdmin)) err('Chỉ quản trị viên mới được thực hiện thao tác này.');
       return { ok: true, data: A[req.action](me, d) };
@@ -1740,6 +1758,79 @@ function KPI_createCore(store, env) {
       return { ok: false, error: e.kpi ? e.message : 'Lỗi hệ thống: ' + e.message, code: e.code || '' };
     }
   }
+  function handle(req) {
+    req = req || {};
+    var res = run(req);
+    try { logUse(req, res); } catch (e) { /* ghi nhật ký hỏng không được làm hỏng thao tác chính */ }
+    return res;
+  }
+
+  /* ---------- Nhật ký sử dụng ---------- */
+  function nowVn() { return new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 19).replace('T', ' '); } // giờ Việt Nam: 2026-11-15 09:30:00
+  function logKeep() { var v = num(cfg('logKeepDays', KPI_LOG.keepDays)); return v >= 7 && v <= 3650 ? Math.round(v) : KPI_LOG.keepDays; }
+  function logId(v) { v = str(v).trim(); return /^\d{9,11}$/.test(v) ? ('000' + v).slice(-12) : v; } // Sheet có thể làm mất số 0 đầu của CCCD
+  /** Ghi một dòng nhật ký cho thao tác vừa chạy. Không bao giờ ghi mật khẩu hay nội dung dữ liệu, chỉ ghi ai – làm gì – trên đối tượng nào – kết quả. */
+  function logUse(req, res) {
+    if (!env.usage) return;
+    var action = str(req.action), d = req.data || {};
+    if (!action || action === 'adminUsage') return;
+    var info = KPI_LOG_ACTIONS[action] || ['khac', action];
+    var uid = action === 'login' ? cut(str(d.username).trim().toLowerCase(), 20) : req._me ? str(req._me.id) : '';
+    if (!uid) return; // phiên hết hạn hoặc yêu cầu không rõ người gọi
+    var target = [d.table, d.userId, d.periodId, d.id, d.code, d.taskId].filter(function (x) { return typeof x === 'string' || typeof x === 'number'; })
+      .map(function (x) { return cut(x, 40); }).filter(Boolean).join(' · ');
+    if (info[0] === 'xem' && res.ok && !env.usage.once(uid + '|' + action + '|' + target, KPI_LOG.viewGap)) return;
+    env.usage.add([nowVn(), uid, info[0], action, cut(target, 120), res.ok ? '' : cut(res.error, 120)]);
+    if (env.locked && env.usage.once('gop-nhat-ky', 21600)) compactLog();
+  }
+  /** Gộp các dòng nhật ký quá hạn lưu (hoặc vượt số dòng tối đa) thành số lượt theo tháng rồi xoá. Chỉ gọi khi đang giữ khoá ghi. */
+  function compactLog() {
+    var head = env.usage.head(), day = new Date(Date.now() + 7 * 3600000 - logKeep() * 86400000).toISOString().slice(0, 10);
+    if (!head.count || (str(head.first) >= day && head.count <= KPI_LOG.maxRows)) return 0;
+    var rows = env.usage.rows(), n = 0;
+    while (n < rows.length && str(rows[n][0]) < day) n++;
+    if (rows.length - n > KPI_LOG.maxRows) n = rows.length - KPI_LOG.maxRows;
+    if (!n) return 0;
+    var map = {}, order = [];
+    env.usage.sums().forEach(function (r) { var k = [str(r[0]), logId(r[1]), str(r[3])].join('|'); if (!map[k]) order.push(k); map[k] = [str(r[0]), logId(r[1]), str(r[2]), str(r[3]), num(r[4]), num(r[5])]; });
+    rows.slice(0, n).forEach(function (r) {
+      var k = [str(r[0]).slice(0, 7), logId(r[1]), str(r[3])].join('|');
+      if (!map[k]) { order.push(k); map[k] = [str(r[0]).slice(0, 7), logId(r[1]), str(r[2]), str(r[3]), 0, 0]; }
+      map[k][4]++; if (str(r[5])) map[k][5]++;
+    });
+    env.usage.setSums(order.sort().map(function (k) { return map[k].map(String); }));
+    env.usage.drop(n);
+    return n;
+  }
+  /** Số liệu cho trang Nhật ký sử dụng của quản trị: khối số lượt theo ngày – người – chức năng trong khoảng ngày, kèm các dòng chi tiết mới nhất. */
+  A.adminUsage = function (me, d) {
+    if (!env.usage) err('Máy chủ này chưa bật ghi nhật ký sử dụng.');
+    if (has(d.keepDays)) { var kd = Math.round(num(d.keepDays)); if (!(kd >= 7 && kd <= 3650)) err('Số ngày lưu nhật ký chi tiết phải từ 7 đến 3650.'); setCfg('logKeepDays', kd); }
+    if (env.locked) compactLog();
+    var today = nowVn().slice(0, 10);
+    var to = DATE.test(str(d.to)) ? str(d.to) : today;
+    var from = DATE.test(str(d.from)) ? str(d.from) : new Date(Date.parse(to + 'T00:00:00Z') - 29 * 86400000).toISOString().slice(0, 10);
+    if (from > to) err('Ngày bắt đầu phải trước ngày kết thúc.');
+    var rows = env.usage.rows(), cube = {}, detail = [];
+    rows.forEach(function (r) {
+      var t = str(r[0]), dayOf = t.slice(0, 10);
+      if (dayOf < from || dayOf > to) return;
+      var uid = logId(r[1]), ok = str(r[5]) ? 0 : 1, k = [dayOf, uid, str(r[3]), ok].join('|');
+      var c = cube[k] || (cube[k] = [dayOf, uid, str(r[3]), ok, 0, '']);
+      c[4]++; c[5] = t;
+      detail.push([t, uid, str(r[2]), str(r[3]), str(r[4]), str(r[5])]);
+    });
+    var out = Object.keys(cube).map(function (k) { return cube[k]; });
+    env.usage.sums().forEach(function (r) { // các tháng đã gộp: chỉ còn số lượt theo tháng
+      var m = str(r[0]);
+      if (m < from.slice(0, 7) || m > to.slice(0, 7)) return;
+      var all = num(r[4]), bad = num(r[5]);
+      if (all - bad > 0) out.push([m, logId(r[1]), str(r[3]), 1, all - bad, '']);
+      if (bad > 0) out.push([m, logId(r[1]), str(r[3]), 0, bad, '']);
+    });
+    return { from: from, to: to, keepDays: logKeep(), maxRows: KPI_LOG.maxRows, viewGap: KPI_LOG.viewGap, stored: rows.length, inRange: detail.length,
+      cube: out, detail: detail.slice(-1000).reverse() };
+  };
 
   return { handle: handle, seed: seed, importEvals: importEvals, migrateEval: migrateEval, resetAllPasswords: resetAllPasswords, importLibrary: importLibrary, importCatalog: importCatalog };
 }

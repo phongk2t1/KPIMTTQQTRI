@@ -226,6 +226,14 @@ function importLibrary() {
   Logger.log(core.importLibrary(KPI_LIBRARY, true).join('\n'));
 }
 
+/** Nạp Danh mục sản phẩm thí điểm từ tệp DanhMuc.gs (biến KPI_CATALOG). Thay toàn bộ danh mục đang có. */
+function importCatalog() {
+  var ss = getSpreadsheet_();
+  ensureSheets_(ss);
+  var core = KPI_createCore(makeSheetStore_(ss), makeEnv_());
+  Logger.log('ĐÃ NẠP ' + core.importCatalog(KPI_CATALOG) + ' mã sản phẩm vào trang DanhMucSanPham.');
+}
+
 function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
@@ -237,7 +245,7 @@ function doGet() {
 /* Các thao tác chỉ đọc không cần xếp hàng chờ khoá: nhiều người đăng nhập, xem phiếu cùng lúc vẫn chạy song song.
  * Chỉ thao tác ghi mới lấy khoá để hai lượt ghi không chen nhau. */
 var KPI_READ_ACTIONS = { login: 1, bootstrap: 1, overview: 1, stats: 1, getEvaluation: 1, tasksFrom: 1, adminList: 1,
-  evidenceGet: 1, libraryFind: 1, adminLibraryList: 1, rating: 1 };
+  evidenceGet: 1, libraryFind: 1, adminLibraryList: 1, rating: 1, catalog: 1 };
 
 function doPost(e) {
   var req;

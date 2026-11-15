@@ -162,6 +162,7 @@
       var t = E.tasks[rows[k]], no = 'Công việc số ' + (rows[k] + 1);
       if (t.isNew && !String(t.name).trim()) return toast(no + ' (việc thêm mới) chưa ghi tên.', true);
       if (mode === 'score' && !t.code && !KPI_calc(t.m)) return toast(no + ' chưa chọn đủ 5 mức A–E ở khối lãnh đạo chấm.', true);
+      if (mode === 'score' && t.code && (t.m || []).some(function (v) { return v; }) && !KPI_calc(t.m)) return toast(no + ': muốn điều chỉnh theo A–E thì chọn đủ 5 mức ở khối lãnh đạo, không thì để trống cả 5.', true);
       if (mode === 'score' && t.code && (Number(t.H) < 1 || Number(t.Q) < 1 || Number(t.T) < 1) && !String(t.note || '').trim()) return toast(no + ' bị giảm điểm (H, Q hoặc T dưới 1): hãy ghi lý do ở ô nhận xét để cán bộ được biết.', true);
       if (mode === 'note' && t.isNew) return toast(no + ' là việc mới thêm, hãy bấm Chấm điểm để lưu.', true);
       if (mode === 'note' && !String(t.note || '').trim()) return toast(no + ' chưa có nhận xét. Ghi nhận xét để cán bộ biết cần điều chỉnh gì.', true);
@@ -630,8 +631,8 @@
   function levelCell(t, ti, key, fi, editable) {
     var f = M.factors[fi], v = (t[key] || [])[fi] || 0;
     if (!editable) return '<td class="lv">' + (v ? '<b>' + v + '</b> · ' + h(f.levels[v - 1][0]) : '<span class="muted">–</span>') + '</td>';
-    return '<td class="lv"><select data-lv="' + key + '" data-fi="' + fi + '" data-t="' + ti + '" aria-label="' + f.key + ' – ' + h(f.name) + '"' + (v ? '' : ' class="empty"') + '>' +
-      '<option value="0">– chọn –</option>' + opts(f.levels.map(function (l, i) { return [i + 1, (i + 1) + ' · ' + l[0]]; }), v) + '</select></td>';
+    return '<td class="lv"><select data-lv="' + key + '" data-fi="' + fi + '" data-t="' + ti + '" aria-label="' + f.key + ' – ' + h(f.name) + '"' + (v || t.code ? '' : ' class="empty"') + '>' +
+      '<option value="0">' + (t.code ? '– theo mã –' : '– chọn –') + '</option>' + opts(f.levels.map(function (l, i) { return [i + 1, (i + 1) + ' · ' + l[0]]; }), v) + '</select></td>';
   }
   function calcCells(t, key) {
     var c = cK(t, key);
@@ -641,8 +642,9 @@
   /** Nội dung ô S, N, điểm của một dòng. Việc trong danh mục: ô N ghi mức N của mã (khối tự kê) hoặc hệ số tổng hợp (khối lãnh đạo). */
   function calcPart(t, key, c, part) {
     if (!c) return part === 'P' ? '<b></b>' : '';
-    if (part === 'S') return t.code ? '' : fmt(c.s);
-    if (part === 'N') return t.code ? (key === 's' ? '<span class="n">' + h(c.n) + '</span>' : '<span class="n" title="Hệ số tổng hợp H × (1 + Q + T) / 3">×' + fmt(KPI_factor(t, (E.d || {}).rule)) + '</span>') : '<span class="n n' + c.n.slice(1) + '">' + c.n + '</span>';
+    if (part === 'S') return c.s === '' ? '' : fmt(c.s);
+    if (part === 'N') return (/^N[1-5]$/.test(c.n) ? '<span class="n n' + c.n.slice(1) + '">' + c.n + '</span>' : '<span class="n">' + h(c.n) + '</span>') +
+      (t.code && key === 'm' ? '<div class="muted small" title="Hệ số tổng hợp từ H, Q, T">×' + fmt(KPI_factor(t, (E.d || {}).rule)) + '</div>' : '');
     return '<b>' + f4(c.point) + '</b>';
   }
   function blankMgrTask() { return { id: newId(), isNew: true, name: '', product: 'Công văn', qty: 1, month: E.months[E.months.length - 1], s: [0, 0, 0, 0, 0], m: [0, 0, 0, 0, 0], link: '', note: '' }; }
@@ -667,16 +669,14 @@
         '<td><input type="number" min="0.01" step="any" data-fld="qty" data-t="' + ti + '" value="' + h(t.qty) + '" aria-label="Số lượng sản phẩm">' + (t.code && t.unit ? '<div class="muted small">' + h(t.unit) + '</div>' : '') + '</td>' +
         '<td><select data-fld="month" data-t="' + ti + '" aria-label="Tháng thực hiện">' + opts(months.map(function (x) { return [x, x]; }), t.month) + '</select></td>'
         : '<td>' + h(t.product) + '</td><td class="num">' + fmt(t.qty) + (t.code && t.unit ? '<div class="muted small">' + h(t.unit) + '</div>' : '') + '</td><td class="nowrap">' + h(t.month) + '</td>');
-    if (t.code) cells += catCells(t, ti, 's');
-    else for (var i = 0; i < 5; i++) cells += levelCell(t, ti, 's', i, edit && !t.isNew);
+    for (var i = 0; i < 5; i++) cells += levelCell(t, ti, 's', i, edit && (!t.isNew || !!t.code));
     cells += calcCells(t, 's');
     if (E.showMgr) {
-      if (t.code) cells += catCells(t, ti, 'm', mEdit);
-      else for (var k = 0; k < 5; k++) cells += levelCell(t, ti, 'm', k, mEdit);
+      for (var k = 0; k < 5; k++) cells += levelCell(t, ti, 'm', k, mEdit);
       cells += calcCells(t, 'm');
     }
     if (mgr) {
-      cells += '<td class="c-note">' + (mEdit ? '<textarea rows="2" data-fld="note" data-t="' + ti + '" placeholder="Nhận xét cho việc này (không bắt buộc)" aria-label="Nhận xét cho công việc ' + (ti + 1) + '">' + h(t.note || '') + '</textarea>' + (t.code ? '' : confirmHtml(t, ti)) : (t.note ? h(t.note) : '<span class="muted">–</span>')) + '</td>' +
+      cells += '<td class="c-note">' + (mEdit ? '<textarea rows="2" data-fld="note" data-t="' + ti + '" placeholder="Nhận xét cho việc này (không bắt buộc)" aria-label="Nhận xét cho công việc ' + (ti + 1) + '">' + h(t.note || '') + '</textarea>' + (t.code ? '<div class="tx mg hq"><b>Hệ số xác nhận</b><div class="hqt">' + hqtSel(t, ti, 'H') + hqtSel(t, ti, 'Q') + hqtSel(t, ti, 'T') + '</div></div>' : '') + confirmHtml(t, ti) : (t.note ? h(t.note) : '<span class="muted">–</span>')) + '</td>' +
         '<td class="no-print center nowrap">' + (mEdit ? '<button type="button" class="btn sm ok" data-act="scoreOne" data-t="' + ti + '">' + (t.code ? 'Xác nhận' : 'Chấm điểm') + '</button>' +
           (fixing && t.locked ? ' <button type="button" class="btn sm" data-act="editCancel" data-t="' + ti + '">Huỷ</button>' : '') +
           (t.isNew ? ' <button type="button" class="btn sm danger" title="Bỏ việc vừa thêm" data-act="taskDel" data-t="' + ti + '">×</button>' : '')
@@ -748,7 +748,7 @@
     var guide = p.canEdit ? '<details class="card guide no-print"' + (E.tasks.length <= 1 ? ' open' : '') + '><summary>Cách ghi phiếu' + (d.period.deadline ? ' · hạn chốt nhập <b>' + fdate(d.period.deadline) + '</b>' : '') + '</summary>' +
       '<ul><li><b>Tên công việc:</b> ' + h(HINT_NAME) + '</li><li><b>Số lượng sản phẩm:</b> ' + h(HINT_QTY) + '</li>' +
       '<li><b>Danh mục sản phẩm:</b> chọn loại sản phẩm (ví dụ Công văn), bấm <b>Thêm</b> ở sản phẩm đúng với việc đã làm, hoặc tích nhiều sản phẩm rồi bấm “Thêm các sản phẩm đã tích”. Điểm giao chuẩn = điểm chuẩn của mã × số lượng; người phụ trách xác nhận hệ số H (khối lượng), Q (chất lượng), T (tiến độ).</li>' +
-      '<li><b>A, B, C, D, E:</b> chỉ dùng cho việc ngoài danh mục: chọn mức phù hợp cho từng công việc; S, mức N và điểm của N tự tính. Xem giải thích từng mức ở <a href="#/tieuchi">Bảng tiêu chí</a>.</li></ul></details>' : '';
+      '<li><b>A, B, C, D, E:</b> với việc trong danh mục thì để trống (điểm theo mã); chỉ chọn đủ 5 mức khi muốn điều chỉnh điểm của việc đó. Với việc ngoài danh mục: chọn mức phù hợp cho từng công việc; S, mức N và điểm của N tự tính. Xem giải thích từng mức ở <a href="#/tieuchi">Bảng tiêu chí</a>.</li></ul></details>' : '';
     function commentBox(id, label, value, editable, placeholder) {
       if (editable) return '<label class="f"><span>' + label + '</span><textarea id="' + id + '" rows="2" placeholder="' + placeholder + '">' + h(value) + '</textarea></label>';
       return value ? '<p><b>' + label + ':</b> ' + h(value) + '</p>' : '';
@@ -1253,6 +1253,7 @@
           if (tasks.indexOf(t) < 0 || (t.locked && !E.editing[t.id])) continue; // việc đã được chấm (kể cả việc người phụ trách thêm) không cần kiểm tra lại
           if (!t.name.trim()) return toast('Công việc số ' + (i + 1) + ' chưa ghi tên.', true);
           if (!cK(t, 's')) return toast('Công việc số ' + (i + 1) + ' chưa chọn đủ 5 tiêu chí A–E.', true);
+          if (t.code && (t.s || []).some(function (v) { return v; }) && !KPI_calc(t.s)) return toast('Công việc số ' + (i + 1) + ': muốn điều chỉnh theo A–E thì chọn đủ 5 mức, không thì để trống cả 5.', true);
         }
         if (!E.d.perms.selfScore && !confirm('Nộp phiếu gồm ' + tasks.length + ' công việc, tổng ' + fmt(sumPoints('s')) + ' điểm tự chấm? Sau khi nộp anh/chị không sửa được, trừ khi được yêu cầu sửa.')) return;
       }
@@ -1364,12 +1365,12 @@
   }
   /** Phần bổ sung dưới tên công việc: hạn, ngày hoàn thành, tiến độ, điểm thưởng, minh chứng, kết quả xác nhận, phản hồi. */
   function extraHtml(t, ti, edit) {
-    var d = E.d, out = '', maxB = (d.rule || {}).maxBonus || 5, mine = d.owner.id === S.user.id;
+    var d = E.d, out = t.code ? catInfoHtml(t, ti) : '', maxB = (d.rule || {}).maxBonus || 5, mine = d.owner.id === S.user.id;
     if (edit) {
       out += '<div class="tx no-print"><label>Hạn hoàn thành<input type="date" data-fld="deadline" data-t="' + ti + '" value="' + h(t.deadline || '') + '"></label>' +
         '<label>Ngày hoàn thành<input type="date" data-fld="doneDate" data-t="' + ti + '" value="' + h(t.doneDate || '') + '"></label>' +
-        (t.code ? '' : '<label>Tiến độ (%)<input type="number" min="0" max="100" step="1" data-fld="progress" data-t="' + ti + '" value="' + h(t.progress == null ? '' : t.progress) + '" placeholder="100"></label>' +
-        '<label>Điểm thưởng đề xuất (%)<input type="number" min="0" max="' + maxB + '" step="0.5" data-fld="bonus" data-t="' + ti + '" value="' + h(t.bonus || '') + '" placeholder="0"></label>') +
+        '<label>Tiến độ (%)<input type="number" min="0" max="100" step="1" data-fld="progress" data-t="' + ti + '" value="' + h(t.progress == null ? '' : t.progress) + '" placeholder="100"></label>' +
+        '<label>Điểm thưởng đề xuất (%)<input type="number" min="0" max="' + maxB + '" step="0.5" data-fld="bonus" data-t="' + ti + '" value="' + h(t.bonus || '') + '" placeholder="0"></label>' +
         (d.canUpload ? '<button type="button" class="btn sm" data-act="evOpen" data-t="' + ti + '">📎 Minh chứng (' + (t.ev || []).length + '/' + KPI_MAX_EVIDENCE + ')</button>' : '') + '</div>';
     }
     var chips = '';
@@ -1379,7 +1380,7 @@
       if (t.progress != null && t.progress !== '') chips += '<span class="badge b-gray">Tiến độ ' + h(t.progress) + '%</span>';
       if (Number(t.bonus)) chips += '<span class="badge b-gray">Đề xuất thưởng ' + fmt(t.bonus) + '%</span>';
     }
-    if (t.locked && !t.code && KPI_calc(t.m)) {
+    if (t.locked && cK(t, 'm')) {
       if (t.mProgress != null && Number(t.mProgress) < 100) chips += '<span class="badge b-amber">Xác nhận hoàn thành ' + h(t.mProgress) + '%</span>';
       if (t.ot && t.oq) chips += '<span class="badge b-green">★ Vượt mức</span>';
       else if (t.ot) chips += '<span class="badge b-blue">Vượt tiến độ</span>';
@@ -1836,7 +1837,18 @@
     if (editable) return '<td class="lv cat" colspan="5"><div class="hqt">' + hqtSel(t, ti, 'H') + hqtSel(t, ti, 'Q') + hqtSel(t, ti, 'T') + '</div></td>';
     return '<td class="lv cat" colspan="5">' + (cK(t, 'm') ? 'H <b>' + fmt(t.H) + '</b> · Q <b>' + fmt(t.Q) + '</b> · T <b>' + fmt(t.T) + '</b><div class="muted small">Điểm thực đạt P = G × ' + fmt(KPI_factor(t, (E.d || {}).rule)) + ' = <b>' + f4(Math.round(cK(t, 'm').point * (Number(t.qty) || 0) * 1e4) / 1e4) + '</b></div>' : '<span class="muted">Chưa xác nhận</span>') + '</td>';
   }
-  function gText(t) { return 'Điểm giao chuẩn G = ' + f4(t.std) + ' × ' + fmt(Number(t.qty) || 0) + ' = <b>' + f4(Math.round((Number(t.std) || 0) * (Number(t.qty) || 0) * 1e4) / 1e4) + '</b>'; }
+  /** Dòng tính điểm của việc trong danh mục: G theo điểm chuẩn (hoặc theo A–E nếu đã điều chỉnh), và P sau khi người phụ trách xác nhận. */
+  function gText(t) {
+    var q = Number(t.qty) || 0, s = cK(t, 's'), m = cK(t, 'm'), r = function (x) { return f4(Math.round(x * 1e4) / 1e4); };
+    var out = 'Điểm giao chuẩn G = ' + f4(s.point) + ' × ' + fmt(q) + ' = <b>' + r(s.point * q) + '</b>' + (s.adj ? ' (đã điều chỉnh theo A–E: ' + h(s.n) + ' thay cho ' + h(t.n) + ')' : '');
+    if (m) out += '<br>Xác nhận: H <b>' + fmt(t.H) + '</b> · Q <b>' + fmt(t.Q) + '</b> · T <b>' + fmt(t.T) + '</b>' + (m.adj && m.base !== s.point ? ' · lãnh đạo điều chỉnh A–E: ' + h(m.n) + ' (' + f4(m.base) + ' điểm)' : '') +
+      ' → điểm thực đạt P = <b>' + r(m.point * q * (1 + (Number(t.mBonus) || 0) / 100)) + '</b>';
+    return out;
+  }
+  function catInfoHtml(t, ti) {
+    return '<div class="catinfo"><span class="badge b-blue">' + h(t.code) + '</span> ' + h(t.n) + ' · điểm chuẩn <b>' + f4(t.std) + '</b>/' + h(t.unit || 'sản phẩm') +
+      '<div class="muted small" data-g="' + ti + '">' + gText(t) + '</div></div>';
+  }
   /** Dải chỉ số của phiếu: G, P, tỷ lệ KPI, giờ chuẩn quy đổi so với quỹ giờ làm việc của kỳ. */
   function kpiStripHtml() {
     return '<div class="stats kpi-strip" style="margin:14px 0 0"><div class="stat"><div class="v" id="kG">–</div><div class="l">Điểm giao chuẩn đã xác nhận (G)</div></div>' +
@@ -2020,7 +2032,7 @@
       var t = E.tasks[ti];
       if (!t[el.dataset.lv]) t[el.dataset.lv] = [0, 0, 0, 0, 0];
       t[el.dataset.lv][+el.dataset.fi] = +el.value;
-      el.classList.toggle('empty', !+el.value);
+      el.classList.toggle('empty', !+el.value && !t.code);
       updateRow(ti); updateTotals();
     } else if (el.dataset.fld === 'qty') {
       var q = Number(el.value);

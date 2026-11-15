@@ -6,6 +6,7 @@
   var S = { user: null, hasReports: false, units: [], periods: [], config: {}, canUpload: false, periodId: '', ov: null, ovKey: '', st: null, cat: null };
   var E = null;   // phiếu đang mở
   var ADMIN = null; // dữ liệu trang quản trị
+  var USE = { d: null, from: '', to: '', unit: '', kind: '', q: '' }; // trang Nhật ký sử dụng
 
   var LEVEL = {};
   Object.keys(KPI_LEVELS).forEach(function (k) { LEVEL[k] = KPI_LEVELS[k].name; });
@@ -243,6 +244,7 @@
       } else if (route === 'quantri') {
         ADMIN = await api('adminList');
         if (arg === 'catalog') S.cat = (await api('catalog')).items;
+        if (arg === 'usage') USE.d = await api('adminUsage', { from: USE.from, to: USE.to });
         html = adminHtml(arg || 'users');
       } else if (route === 'tieuchi') html = modelHtml();
       else html = passwordHtml();
@@ -1046,11 +1048,12 @@
       (loose.length ? '<div class="card"><h2>Chưa có người phụ trách (' + loose.length + ')</h2><p class="muted small">Những người tự kê công việc trong danh sách này chưa nộp được phiếu cho đến khi được khai người phụ trách. Người đứng đầu cơ quan không cần khai.</p><ul class="tree">' + loose.map(node).join('') + '</ul></div>' : '');
   }
   function adminHtml(tab) {
-    var tabNames = { users: 'Người dùng', units: 'Đơn vị', tree: 'Cây phụ trách', periods: 'Kỳ đánh giá', catalog: 'Danh mục sản phẩm', config: 'Xếp loại, cơ quan' };
+    var tabNames = { users: 'Người dùng', units: 'Đơn vị', tree: 'Cây phụ trách', periods: 'Kỳ đánh giá', catalog: 'Danh mục sản phẩm', config: 'Xếp loại, cơ quan', usage: 'Nhật ký sử dụng' };
     if (!tabNames[tab]) tab = 'users';
     var tabs = '<div class="tabs">' + Object.keys(tabNames).map(function (k) { return '<button data-act="tab" data-t="' + k + '" class="' + (k === tab ? 'on' : '') + '">' + tabNames[k] + '</button>'; }).join('') + '</div>';
     if (tab === 'tree') return tabs + treeHtml();
     if (tab === 'catalog') return tabs + catAdminHtml();
+    if (tab === 'usage') return tabs + usageHtml();
     if (tab === 'config') {
       var rs = (S.config.ratings || []).concat([{ name: '', min: '' }]);
       return tabs + '<div class="card" style="max-width:640px"><label class="f"><span>Tên cơ quan (hiện trên phiếu, báo cáo)</span><input type="text" id="cfgOrg" value="' + h(S.config.orgName) + '"></label>' +
@@ -1885,6 +1888,135 @@
     if ((m = /^\s*(\d+(?:\/\d+)?)\s*giờ/.exec(t))) return Math.round(fr(m[1]) * 1e4) / 1e4;
     return Math.round(point * 4 * 1e6) / 1e6;
   }
+/* ---------- Nhật ký sử dụng (quản trị) ---------- */
+  function useUnitIds(id) { // đơn vị được chọn và các đơn vị con
+    var ok = {}; ok[id] = true;
+    for (var g = 0, more = true; more && g < 20; g++) { more = false; S.units.forEach(function (u) { if (ok[u.parentId] && !ok[u.id]) { ok[u.id] = more = true; } }); }
+    return ok;
+  }
+  function useLabel(a) { return (KPI_LOG_ACTIONS[a] || ['khac', a])[1]; }
+  function useKind(a) { return (KPI_LOG_ACTIONS[a] || ['khac'])[0]; }
+  function usageHtml() {
+    var d = USE.d;
+    return '<div class="card no-print"><div class="usebar">' +
+      '<label>Từ ngày<input type="date" id="useFrom" value="' + h(d.from) + '"></label><label>Đến ngày<input type="date" id="useTo" value="' + h(d.to) + '"></label>' +
+      '<button class="btn primary" data-act="useLoad">Xem</button>' +
+      '<label>Đơn vị<select id="useUnit"><option value="">Tất cả đơn vị</option>' + opts(S.units.map(function (u) { return [u.id, u.name]; }), USE.unit) + '</select></label>' +
+      '<label>Loại thao tác<select id="useKind"><option value="">Tất cả</option>' + opts(Object.keys(KPI_LOG_KINDS).map(function (k) { return [k, KPI_LOG_KINDS[k]]; }), USE.kind) + '</select></label>' +
+      '<label class="grow">Tìm theo họ tên hoặc số CCCD<input type="search" id="useQ" value="' + h(USE.q) + '" placeholder="Gõ tên người dùng…"></label>' +
+      '<button class="btn" data-act="useExport">Xuất Excel</button></div>' +
+      '<p class="muted small" style="margin:10px 0 0">Mỗi lượt đăng nhập và mỗi thao tác xem, thêm, sửa, xoá được ghi một dòng (ai, lúc nào, chức năng gì, trên đối tượng nào, kết quả); không ghi mật khẩu hay nội dung dữ liệu. ' +
+      'Cùng một người xem lại cùng một nội dung trong ' + Math.round(d.viewGap / 60) + ' phút chỉ tính một lượt. Đang lưu <b>' + fmt(d.stored) + '</b> dòng chi tiết (tối đa ' + fmt(d.maxRows) + '). ' +
+      'Dòng cũ hơn <input type="number" id="useKeep" min="7" max="3650" value="' + h(d.keepDays) + '" style="width:70px"> ngày được gộp thành số lượt theo tháng rồi xoá. <button class="btn sm" data-act="useKeep">Lưu số ngày</button></p></div>' +
+      '<div id="useBody">' + usageBody() + '</div>';
+  }
+  /** Lọc khối số liệu theo đơn vị, loại, tên rồi dựng các bảng. */
+  function usageData() {
+    var d = USE.d, users = {}, unitOk = USE.unit ? useUnitIds(USE.unit) : null, q = USE.q.trim().toLowerCase();
+    ADMIN.users.forEach(function (u) { users[u.id] = u; });
+    function pass(uid, action) {
+      var u = users[uid];
+      if (unitOk && !(u && unitOk[u.unitId])) return false;
+      if (USE.kind && useKind(action) !== USE.kind) return false;
+      if (q && (u ? u.fullName : '').toLowerCase().indexOf(q) < 0 && String(uid).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    }
+    var by = { day: {}, user: {}, action: {}, unit: {} }, tot = { all: 0, bad: 0 };
+    Object.keys(KPI_LOG_KINDS).forEach(function (k) { tot[k] = 0; });
+    function cell(map, key) { var c = map[key]; if (!c) { c = map[key] = { all: 0, bad: 0, last: '' }; Object.keys(KPI_LOG_KINDS).forEach(function (k) { c[k] = 0; }); } return c; }
+    d.cube.forEach(function (r) {
+      if (!pass(r[1], r[2])) return;
+      var n = r[4], k = useKind(r[2]), u = users[r[1]];
+      [cell(by.day, r[0]), cell(by.user, r[1]), cell(by.action, r[2]), cell(by.unit, u ? u.unitId : '?')].forEach(function (c) {
+        if (r[3]) { c.all += n; c[k] += n; } else c.bad += n;
+        if (r[5] > c.last) c.last = r[5];
+      });
+      if (r[3]) { tot.all += n; tot[k] += n; } else tot.bad += n;
+    });
+    var people = ADMIN.users.filter(function (u) { return u.active && (!unitOk || unitOk[u.unitId]) && (!q || u.fullName.toLowerCase().indexOf(q) >= 0 || String(u.id).indexOf(q) >= 0); });
+    return { by: by, tot: tot, users: users, people: people, pass: pass };
+  }
+  function usageBody() {
+    var d = USE.d, x = usageData(), by = x.by, tot = x.tot, K = ['dangnhap', 'xem', 'them', 'sua', 'xoa'];
+    var active = x.people.filter(function (u) { return by.user[u.id] && by.user[u.id].all; }).length;
+    var tiles = '<div class="stats"><div class="stat hl"><div class="v">' + fmt(tot.all) + '</div><div class="l">Tổng lượt sử dụng</div><div class="x">' + fdate(d.from) + ' – ' + fdate(d.to) + '</div></div>' +
+      '<div class="stat s-done"><div class="v">' + active + ' / ' + x.people.length + '</div><div class="l">Người có sử dụng</div><div class="x">' + (x.people.length - active) + ' người chưa dùng</div></div>' +
+      K.map(function (k) { return '<div class="stat"><div class="v">' + fmt(tot[k]) + '</div><div class="l">Lượt ' + KPI_LOG_KINDS[k].toLowerCase() + '</div></div>'; }).join('') +
+      '<div class="stat s-none"><div class="v">' + fmt(tot.bad) + '</div><div class="l">Lượt không thành công</div><div class="x">sai mật khẩu, thiếu quyền, nhập sai</div></div></div>';
+    // biểu đồ theo ngày (khoảng dài hơn 62 ngày hoặc số liệu đã gộp thì theo tháng)
+    var days = Object.keys(by.day).sort(), span = (Date.parse(d.to) - Date.parse(d.from)) / 86400000 + 1, monthly = span > 62 || days.some(function (k) { return k.length === 7; }), series = {};
+    if (!monthly) for (var t = Date.parse(d.from + 'T00:00:00Z'); t <= Date.parse(d.to + 'T00:00:00Z'); t += 86400000) series[new Date(t).toISOString().slice(0, 10)] = 0;
+    days.forEach(function (k) { var key = monthly ? k.slice(0, 7) : k; series[key] = (series[key] || 0) + by.day[k].all; });
+    var chart = colsHtml(Object.keys(series).sort().map(function (k) {
+      return { label: monthly ? k.slice(5, 7) + '/' + k.slice(0, 4) : k.slice(8, 10) + '/' + k.slice(5, 7), v: series[k], attrs: 'type="button"', title: (monthly ? 'Tháng ' : 'Ngày ') + (monthly ? k.slice(5, 7) + '/' + k.slice(0, 4) : fdate(k)) + ': ' + series[k] + ' lượt' };
+    }));
+    var kindChart = colsHtml(Object.keys(KPI_LOG_KINDS).map(function (k) { return { label: KPI_LOG_KINDS[k], v: tot[k], attrs: 'data-act="useSetKind" data-k="' + k + '"', on: USE.kind === k, title: 'Bấm để lọc theo loại ' + KPI_LOG_KINDS[k] }; }));
+    var th = K.map(function (k) { return '<th class="num">' + KPI_LOG_KINDS[k] + '</th>'; }).join('') + '<th class="num">Tổng</th><th class="num">Lỗi</th>';
+    var td = function (c) { c = c || {}; return K.map(function (k) { return '<td class="num">' + (c[k] ? fmt(c[k]) : '') + '</td>'; }).join('') + '<td class="num"><b>' + fmt(c.all || 0) + '</b></td><td class="num">' + (c.bad ? fmt(c.bad) : '') + '</td>'; };
+    var last = function (c) { return c && c.last ? h(fdate(c.last) + ' ' + c.last.slice(11, 16)) : ''; };
+    // theo đơn vị
+    var unitRows = S.units.map(function (u) {
+      var mem = x.people.filter(function (p) { return p.unitId === u.id; }), c = by.unit[u.id];
+      if (!mem.length && !c) return '';
+      var act = mem.filter(function (p) { return by.user[p.id] && by.user[p.id].all; }).length;
+      return '<tr><td><a role="button" style="cursor:pointer;font-weight:600" data-act="useSetUnit" data-id="' + h(u.id) + '">' + h(u.name) + '</a></td><td class="num">' + act + ' / ' + mem.length + '</td>' + td(c) + '</tr>';
+    }).join('') + (by.unit['?'] ? '<tr><td class="muted">Không xác định (tên đăng nhập không có trong hệ thống)</td><td class="num"></td>' + td(by.unit['?']) + '</tr>' : '');
+    // theo người dùng: cả người chưa dùng lần nào
+    var ids = {}; x.people.forEach(function (u) { ids[u.id] = true; }); Object.keys(by.user).forEach(function (id) { ids[id] = true; });
+    var userRows = Object.keys(ids).filter(function (id) { return !USE.kind || by.user[id]; }).sort(function (a, b) {
+      return ((by.user[b] || {}).all || 0) - ((by.user[a] || {}).all || 0) || ((x.users[a] || {}).fullName || a).localeCompare((x.users[b] || {}).fullName || b, 'vi');
+    }).map(function (id, i) {
+      var u = x.users[id], c = by.user[id];
+      return '<tr' + (c && c.all ? '' : ' class="muted"') + '><td class="num">' + (i + 1) + '</td><td>' + (u ? '<a role="button" style="cursor:pointer;font-weight:600" data-act="useSetQ" data-q="' + h(u.fullName) + '">' + h(u.fullName) + '</a><div class="muted small">' + h(u.title || '') + '</div>' : '<span class="muted">' + h(id) + ' (không có trong hệ thống)</span>') +
+        '</td><td>' + h(u ? unitName(u.unitId) : '') + '</td>' + td(c) + '<td>' + (last(c) || '<span class="badge b-gray">chưa dùng</span>') + '</td></tr>';
+    }).join('');
+    // theo chức năng
+    var actRows = Object.keys(by.action).sort(function (a, b) { return by.action[b].all - by.action[a].all; }).map(function (a) {
+      var c = by.action[a];
+      return '<tr><td>' + h(useLabel(a)) + '</td><td><span class="badge b-gray">' + h(KPI_LOG_KINDS[useKind(a)]) + '</span></td><td class="num"><b>' + fmt(c.all) + '</b></td><td class="num">' + (c.bad ? fmt(c.bad) : '') + '</td><td>' + last(c) + '</td></tr>';
+    }).join('');
+    // chi tiết
+    var det = d.detail.filter(function (r) { return x.pass(r[1], r[3]); }), shown = det.slice(0, 200);
+    var detRows = shown.map(function (r) {
+      var u = x.users[r[1]];
+      return '<tr><td style="white-space:nowrap">' + h(fdate(r[0]) + ' ' + r[0].slice(11, 19)) + '</td><td>' + h(u ? u.fullName : r[1]) + '</td><td>' + h(useLabel(r[3])) + '</td><td><span class="badge b-gray">' + h(KPI_LOG_KINDS[r[2]] || r[2]) + '</span></td><td class="small">' + h(r[4]) + '</td><td class="small">' + (r[5] ? '<span class="badge b-amber">Lỗi</span> ' + h(r[5]) : '<span class="badge b-green">Thành công</span>') + '</td></tr>';
+    }).join('');
+    var none = '<tr><td colspan="9" class="muted">Không có số liệu trong khoảng đã chọn.</td></tr>';
+    return tiles +
+      '<div class="grid cols-2"><div class="card"><h2>Lượt sử dụng theo ' + (monthly ? 'tháng' : 'ngày') + '</h2>' + chart + '</div><div class="card"><h2>Theo loại thao tác</h2>' + kindChart + '<p class="muted small">Bấm một cột để lọc; bấm lại để bỏ lọc.</p></div></div>' +
+      '<div class="card"><h2>Theo đơn vị</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Đơn vị (bấm để lọc)</th><th class="num">Người có dùng</th>' + th + '</tr></thead><tbody>' + (unitRows || none) + '</tbody></table></div></div>' +
+      '<div class="card"><h2>Theo người dùng</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th class="num">TT</th><th>Họ tên</th><th>Đơn vị</th>' + th + '<th>Lần gần nhất</th></tr></thead><tbody>' + (userRows || none) + '</tbody></table></div></div>' +
+      '<div class="card"><h2>Theo chức năng</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Chức năng</th><th>Loại</th><th class="num">Số lượt</th><th class="num">Lỗi</th><th>Lần gần nhất</th></tr></thead><tbody>' + (actRows || none) + '</tbody></table></div></div>' +
+      '<div class="card"><h2>Nhật ký chi tiết</h2><p class="muted small">Hiện ' + shown.length + ' / ' + det.length + ' dòng mới nhất khớp bộ lọc' + (d.inRange > d.detail.length ? ' (máy chủ gửi về ' + d.detail.length + ' dòng mới nhất trong ' + fmt(d.inRange) + ' dòng của khoảng ngày này; thu hẹp khoảng ngày hoặc Xuất Excel để xem thêm)' : '') + '.</p>' +
+      '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Thời gian</th><th>Người dùng</th><th>Chức năng</th><th>Loại</th><th>Đối tượng</th><th>Kết quả</th></tr></thead><tbody>' + (detRows || none) + '</tbody></table></div></div>';
+  }
+  function usageRender() { var el = document.getElementById('useBody'); if (el) el.innerHTML = usageBody(); }
+  document.addEventListener('input', function (ev) { if (ev.target.id === 'useQ') { USE.q = ev.target.value; usageRender(); } });
+  document.addEventListener('change', function (ev) {
+    if (ev.target.id === 'useUnit') { USE.unit = ev.target.value; usageRender(); }
+    if (ev.target.id === 'useKind') { USE.kind = ev.target.value; usageRender(); }
+  });
+  ACT.useLoad = function () { USE.from = $('#useFrom').value; USE.to = $('#useTo').value; render(); };
+  ACT.useKeep = function (el) { run(el, async function () { USE.d = await api('adminUsage', { from: USE.from, to: USE.to, keepDays: $('#useKeep').value }); toast('Đã lưu: giữ nhật ký chi tiết ' + USE.d.keepDays + ' ngày.'); await render(); }); };
+  ACT.useSetKind = function (el) { USE.kind = USE.kind === el.dataset.k ? '' : el.dataset.k; var s = $('#useKind'); if (s) s.value = USE.kind; usageRender(); };
+  ACT.useSetUnit = function (el) { USE.unit = USE.unit === el.dataset.id ? '' : el.dataset.id; var s = $('#useUnit'); if (s) s.value = USE.unit; usageRender(); };
+  ACT.useSetQ = function (el) { USE.q = el.dataset.q; var s = $('#useQ'); if (s) s.value = USE.q; usageRender(); };
+  ACT.useExport = function (el) {
+    run(el, async function () {
+      if (!window.XLSX) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+      var d = USE.d, x = usageData(), K = ['dangnhap', 'xem', 'them', 'sua', 'xoa'], hk = K.map(function (k) { return KPI_LOG_KINDS[k]; }).concat(['Tổng', 'Lỗi']);
+      var nums = function (c) { c = c || {}; return K.map(function (k) { return c[k] || 0; }).concat([c.all || 0, c.bad || 0]); };
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['NHẬT KÝ SỬ DỤNG HỆ THỐNG – ' + fdate(d.from) + ' đến ' + fdate(d.to)], [], ['CCCD', 'Họ tên', 'Chức vụ', 'Đơn vị'].concat(hk, ['Lần gần nhất'])].concat(
+        x.people.map(function (u) { var c = x.by.user[u.id]; return [u.id, u.fullName, u.title || '', unitName(u.unitId)].concat(nums(c), [c ? c.last : '']); }))), 'Theo người dùng');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Đơn vị'].concat(hk)].concat(S.units.filter(function (u) { return x.by.unit[u.id]; }).map(function (u) { return [u.name].concat(nums(x.by.unit[u.id])); }))), 'Theo đơn vị');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Chức năng', 'Loại', 'Số lượt', 'Lỗi']].concat(Object.keys(x.by.action).map(function (a) { return [useLabel(a), KPI_LOG_KINDS[useKind(a)], x.by.action[a].all, x.by.action[a].bad]; }))), 'Theo chức năng');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Thời gian', 'CCCD', 'Họ tên', 'Loại', 'Chức năng', 'Đối tượng', 'Kết quả']].concat(d.detail.filter(function (r) { return x.pass(r[1], r[3]); }).map(function (r) {
+        return [r[0], r[1], (x.users[r[1]] || {}).fullName || '', KPI_LOG_KINDS[r[2]] || r[2], useLabel(r[3]), r[4], r[5] || 'Thành công']; }))), 'Chi tiết');
+      XLSX.writeFile(wb, 'NhatKySuDung_' + d.from + '_' + d.to + '.xlsx');
+    });
+  };
+
   function catAdminHtml() {
     var all = S.cat || [], types = [], seen = {};
     all.forEach(function (c) { if (!seen[c.type]) { seen[c.type] = 1; types.push(c.type); } });

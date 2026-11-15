@@ -1506,7 +1506,7 @@
         '<td class="nowrap">' + (t.deadline ? h(fdate(t.deadline)) : '<span class="muted">–</span>') + '</td><td style="min-width:120px">' + bar(t) + '</td>' +
         '<td><span class="badge ' + GV_LV[t.lv.k][1] + '">' + GV_LV[t.lv.k][0] + '</span>' + (t.lv.x ? '<div class="muted small">' + h(t.lv.x) + '</div>' : '') + '</td>' +
         '<td class="nowrap">' + (t.locked ? 'H ' + h(fmt(Number(t.h))) + ' · Q ' + h(fmt(Number(t.q))) + ' · T ' + h(fmt(Number(t.t))) + '<div class="small"><b>' + f4(t.score) + '</b> / ' + f4(t.g) + ' điểm</div>' : '<span class="muted">chưa chấm</span>') + '</td>' +
-        '<td class="right no-print"><a class="btn sm' + (!mineIn && t.lv.k === 'review' ? ' primary' : '') + '" href="#/' + (mineIn ? 'tudanhgia' : 'phieu/' + encodeURIComponent(t.userId)) + '">' + (mineIn ? 'Mở phiếu của tôi' : t.locked ? 'Xem phiếu' : 'Mở phiếu để chấm') + '</a></td></tr>';
+        '<td class="right no-print"><a class="btn sm' + (!mineIn && t.lv.k === 'review' ? ' primary' : '') + '" href="#/' + (mineIn ? 'tudanhgia' : 'phieu/' + encodeURIComponent(t.userId)) + '">' + (mineIn ? 'Mở phiếu của tôi' : t.locked ? 'Xem phiếu' : d.admin && t.by !== S.user.id ? 'Mở phiếu (gia hạn, rút việc)' : 'Mở phiếu để chấm') + '</a></td></tr>';
     };
     var head = function (c) { return '<thead><tr><th>' + c + '</th><th>Công việc</th><th>Hạn</th><th>Tiến độ</th><th>Cảnh báo</th><th>Kết quả chấm</th><th class="no-print"></th></tr></thead>'; };
     GV.rows = rows; // các dòng đang hiện, dùng cho nhắc tiến độ và xuất Excel
@@ -1592,9 +1592,10 @@
     var btn = '';
     if (mine && open && x.acc === 'cho') btn += '<button type="button" class="btn sm ok" data-act="taskOk" data-t="' + ti + '">Xác nhận nhiệm vụ</button>' +
       (x.fbUsed ? '' : '<button type="button" class="btn sm warn" data-act="taskFb" data-t="' + ti + '">Phản hồi chưa hợp lý</button>');
-    if (boss && open) {
+    var adm = !boss && S.user.isAdmin && !mine && !!t.by; // quản trị: gia hạn, giao lại, rút việc đã giao thay người giao
+    if ((boss || adm) && open) {
       if (x.acc === 'fb') btn += '<button type="button" class="btn sm ok" data-act="taskRe" data-t="' + ti + '">Giao lại</button>';
-      if (!t.locked && t.by === S.user.id) btn += '<button type="button" class="btn sm danger" data-act="taskDrop" data-t="' + ti + '">Rút việc</button>';
+      if (!t.locked && (t.by === S.user.id || adm)) btn += '<button type="button" class="btn sm danger" data-act="taskDrop" data-t="' + ti + '">Rút việc</button>';
       if (!t.locked && (!E.onlyMine || t.by === S.user.id)) btn += '<span class="ext"><input type="date" id="ext' + ti + '" min="' + h(t.deadline || '') + '" aria-label="Hạn hoàn thành mới"><button type="button" class="btn sm" data-act="taskExt" data-t="' + ti + '">Gia hạn</button></span>';
     }
     if (btn) out += '<div class="flow no-print">' + btn + '</div>';

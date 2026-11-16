@@ -64,7 +64,7 @@
     try { var c = Object.assign({}, b); delete c.pre; localStorage.setItem('kpi_boot', JSON.stringify(c)); } catch (e) { /* bỏ qua */ }
   }
   /* Bản lưu tạm trên trình duyệt để mở trang là có ngay số liệu lần trước, rồi làm mới ngầm. Mọi thao tác ghi đều xoá bản lưu. */
-  var READS = { bootstrap: 1, overview: 1, stats: 1, getEvaluation: 1, tasksFrom: 1, adminList: 1, evidenceGet: 1, libraryFind: 1, adminLibraryList: 1, rating: 1, catalog: 1, adminUsage: 1 };
+  var READS = { pp2Get: 1, pp2List: 1, assignBoard: 1, evidenceSources: 1, bootstrap: 1, overview: 1, stats: 1, getEvaluation: 1, tasksFrom: 1, adminList: 1, evidenceGet: 1, libraryFind: 1, adminLibraryList: 1, rating: 1, catalog: 1, adminUsage: 1 };
   function keep(k, v) { try { sessionStorage.setItem('kpi_c:' + k, JSON.stringify(v)); } catch (e) { /* bỏ qua */ } }
   function kept(k) { try { return JSON.parse(sessionStorage.getItem('kpi_c:' + k) || 'null'); } catch (e) { return null; } }
   function dropKept() { try { Object.keys(sessionStorage).forEach(function (k) { if (k.indexOf('kpi_c:') === 0) sessionStorage.removeItem(k); }); } catch (e) { /* bỏ qua */ } }
@@ -134,11 +134,14 @@
   }
 
   /* ---------- Khung trang ---------- */
+  var NAV_GROUP = { tudanhgia: 'ĐÁNH GIÁ KPI PP1', duyet: 'ĐÁNH GIÁ KPI PP1', pp2: 'ĐÁNH GIÁ KPI PP2', pp2duyet: 'ĐÁNH GIÁ KPI PP2' };
   function navItems() {
     var u = S.user, items = [['tongquan', 'Tổng quan']];
     if (u.selfEval) items.push(['tudanhgia', 'Tự đánh giá']);
     if (S.canAssign) items.push(['giaoviec', 'Giao việc']);
     if (S.hasReports) items.push(['duyet', 'Đánh giá cấp dưới']);
+    if (u.selfEval) items.push(['pp2', 'Tự đánh giá']);                                   // nhóm ĐÁNH GIÁ KPI PP2
+    if (S.hasReports || u.isAdmin) items.push(['pp2duyet', 'Đánh giá cấp dưới']);
     if (S.hasReports || u.isAdmin) items.push(['baocao', 'KPI tổng hợp']);
     if ((S.config.rule || {}).useRating && (S.hasReports || u.isAdmin || u.isStaff || u.isVoter)) items.push(['xeploai', 'Xếp loại']);
     items.push(['tieuchi', 'Bảng tiêu chí']);
@@ -148,10 +151,19 @@
   }
   function sideOff() { try { return localStorage.getItem('kpi_side') === 'off'; } catch (e) { return false; } }
   function shell(route, title, showPeriod) {
-    var nav = navItems().map(function (n) {
-      var on = route === n[0] || (n[0] === (S.hasReports ? 'duyet' : 'baocao') && route === 'phieu');
-      return '<a class="nav' + (on ? ' on' : '') + '" href="#/' + n[0] + '">' + n[1] + '</a>';
-    }).join('');
+    var navLink = function (n) {
+      var on = route === n[0] || (n[0] === (S.hasReports ? 'duyet' : 'baocao') && route === 'phieu') || (n[0] === 'pp2duyet' && route === 'pp2phieu');
+      return '<a class="nav' + (on ? ' on' : '') + (NAV_GROUP[n[0]] ? ' sub' : '') + '" href="#/' + n[0] + '">' + n[1] + '</a>';
+    };
+    // Gom menu thành nhóm: PP1 (hai trang có từ trước) và PP2 (hai trang kê khai, chấm theo bảng tính H – Q – T). Các mục khác giữ nguyên thứ tự.
+    var navAll = navItems(), nav = '', shown = {};
+    navAll.forEach(function (n) {
+      var g = NAV_GROUP[n[0]];
+      if (!g) { nav += navLink(n); return; }
+      if (shown[g]) return;
+      shown[g] = true;
+      nav += '<div class="navgrp">' + g + '</div>' + navAll.filter(function (x) { return NAV_GROUP[x[0]] === g; }).map(navLink).join('');
+    });
     var sel = showPeriod && S.periods.length ? '<label class="period no-print"><span class="muted small">Kỳ đánh giá</span><select id="periodSel">' +
       S.periods.map(function (p) { return '<option value="' + h(p.id) + '"' + (p.id === S.periodId ? ' selected' : '') + '>' + h(p.name) + (p.phase === 'khoa' ? ' (đã khoá)' : p.phase === 'chot' ? ' (đã chốt nhập)' : '') + '</option>'; }).join('') +
       '</select></label>' : '';
@@ -237,20 +249,20 @@
     if (f) f.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
-  var TITLES = { tongquan: 'Tổng quan', tudanhgia: 'Phiếu tự đánh giá', phieu: 'Phiếu đánh giá', duyet: 'Đánh giá cấp dưới', baocao: 'KPI tổng hợp', xeploai: 'Xếp loại chất lượng', giaoviec: 'Giao việc và theo dõi tiến độ', quantri: 'Quản trị hệ thống', tieuchi: 'Bảng tiêu chí chấm điểm', matkhau: 'Đổi mật khẩu' };
+  var TITLES = { tongquan: 'Tổng quan', tudanhgia: 'Phiếu tự đánh giá', phieu: 'Phiếu đánh giá', duyet: 'Đánh giá cấp dưới', baocao: 'KPI tổng hợp', xeploai: 'Xếp loại chất lượng', pp2: 'Tự đánh giá (PP2)', pp2duyet: 'Đánh giá cấp dưới (PP2)', pp2phieu: 'Phiếu đánh giá (PP2)', giaoviec: 'Giao việc và theo dõi tiến độ', quantri: 'Quản trị hệ thống', tieuchi: 'Bảng tiêu chí chấm điểm', matkhau: 'Đổi mật khẩu' };
   var renderSeq = 0;
   async function render() {
     modal.innerHTML = '';
     if (!S.user) return renderLogin();
     var parts = location.hash.replace(/^#\/?/, '').split('/');
     var route = parts[0] || 'tongquan', arg = parts[1] ? decodeURIComponent(parts[1]) : '';
-    var allowed = navItems().map(function (n) { return n[0]; }).concat(S.hasReports || S.user.isAdmin || S.canAssign ? ['phieu'] : []);
+    var allowed = navItems().map(function (n) { return n[0]; }).concat(S.hasReports || S.user.isAdmin || S.canAssign ? ['phieu'] : []).concat(S.hasReports || S.user.isAdmin ? ['pp2phieu'] : []);
     if (S.user.mustChange) route = 'matkhau';
     else if (allowed.indexOf(route) < 0) route = 'tongquan';
     var seq = ++renderSeq;
-    var view = shell(route, TITLES[route], ['tongquan', 'tudanhgia', 'phieu', 'duyet', 'baocao', 'xeploai', 'giaoviec'].indexOf(route) >= 0);
+    var view = shell(route, TITLES[route], ['tongquan', 'tudanhgia', 'phieu', 'duyet', 'baocao', 'xeploai', 'giaoviec', 'pp2', 'pp2duyet', 'pp2phieu'].indexOf(route) >= 0);
     try {
-      var needPeriod = ['tongquan', 'tudanhgia', 'phieu', 'duyet', 'baocao', 'xeploai', 'giaoviec'].indexOf(route) >= 0;
+      var needPeriod = ['tongquan', 'tudanhgia', 'phieu', 'duyet', 'baocao', 'xeploai', 'giaoviec', 'pp2', 'pp2duyet', 'pp2phieu'].indexOf(route) >= 0;
       if (needPeriod && !S.periodId) {
         view.innerHTML = '<div class="card">Chưa có kỳ đánh giá nào. ' + (S.user.isAdmin ? 'Vào <a href="#/quantri/periods">Quản trị › Kỳ đánh giá</a> để tạo.' : 'Vui lòng liên hệ quản trị viên.') + '</div>';
         return;
@@ -260,6 +272,8 @@
       else if (route === 'duyet') html = reviewHtml(await overview());
       else if (route === 'baocao') html = reportHtml(await overview());
       else if (route === 'giaoviec') { var gv = await Promise.all([api('assignBoard', { periodId: S.periodId }), ensureCat().catch(function () { return []; })]); GV.d = gv[0]; loadMyTasks(); html = assignHtml(arg); }
+      else if (route === 'pp2' || route === 'pp2phieu') { var p2 = await Promise.all([api('pp2Get', { periodId: S.periodId, userId: route === 'pp2phieu' ? arg : '' }), ensureCat().catch(function () { return []; })]); if (seq !== renderSeq) return; p2Set(p2[0]); html = p2Html(); }
+      else if (route === 'pp2duyet') { P2.list = await api('pp2List', { periodId: S.periodId }); html = p2ListHtml(); }
       else if (route === 'xeploai') { RT = await api('rating', { periodId: S.periodId }); html = ratingHtml(); }
       else if (route === 'tudanhgia' || route === 'phieu') {
         var d = await api('getEvaluation', { periodId: S.periodId, userId: route === 'phieu' ? arg : '' });
@@ -1426,6 +1440,163 @@
     if (mine && t.locked && t.mBy && t.mBy !== S.user.id && d.period.phase !== 'khoa') out += '<div class="no-print" style="margin-top:6px"><button type="button" class="btn sm" data-act="fbOpen" data-t="' + ti + '">' + (t.fb ? 'Sửa phản hồi' : 'Phản hồi không tán thành') + '</button></div>';
     return out;
   }
+  /* ======================= ĐÁNH GIÁ KPI PP2 =======================
+   * Kê khai theo ngày và chấm H – Q – T đúng cách làm của bảng tính "Hệ thống kê khai và đánh giá KPI":
+   * cán bộ nhập nội dung, ngày, chọn Loại → Mục đích → Tên sản phẩm, giờ thực tế, số lượng; mã, thời gian chuẩn, đơn vị, điểm chuẩn tự nhảy;
+   * lãnh đạo chọn ba hệ số; điểm thực đạt = điểm chuẩn × H × (1 + Q + T) / 3; KPI = trung bình của a, b, c và chỉ hiện khi mọi dòng đã đủ. */
+  var P2 = { d: null, rows: [], list: null };
+  function p2Set(d) { P2.d = d; P2.rows = JSON.parse(JSON.stringify(d.rows || [])); P2.rows.forEach(function (r) { r.h0 = r.H; r.q0 = r.Q; r.t0 = r.T; r.n0 = r.note || ''; }); }
+  function p2Cat() { return (S.cat || []).filter(function (c) { return c.active; }); }
+  function p2Pct(v) { return v == null ? '' : (v * 100).toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'; }
+  function p2G(r) { return r.code && Number(r.qty) > 0 ? Math.round(Number(r.std) * Number(r.qty) * 1e4) / 1e4 : 0; }
+  function p2P(r) { return r.H === '' || r.H == null || r.Q === '' || r.Q == null || r.T === '' || r.T == null ? null : Math.round(p2G(r) * Number(r.H) * (1 + Number(r.Q) + Number(r.T)) / 3 * 1e4) / 1e4; }
+  function p2Missing(r) {
+    var m = [];
+    if (!String(r.name || '').trim()) m.push('Nội dung'); if (!r.workDate) m.push('Ngày'); if (!r.type) m.push('Loại'); if (!r.purpose) m.push('Mục đích'); if (!r.code) m.push('Tên sản phẩm');
+    if (!(Number(r.actual) > 0)) m.push('Giờ thực tế'); if (!(Number(r.qty) > 0)) m.push('Số lượng');
+    return m;
+  }
+  /** Chuẩn hoá để so khớp: bỏ dấu, chữ thường, chỉ giữ chữ và số (như KPI_GY_ChuanHoa_ của bảng tính). */
+  function p2Norm(x) { return String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, ' ').trim(); }
+  var P2_STOP = {}; 'cua cho voi cac mot nhung nhieu theo tren duoi da dang duoc ve tai khi sau truoc khac va hoac cong viec thuc hien noi dung trong ngoai tu den tham gia don vi tinh thang nam mttq viet nam co quan ban nganh phuc vu lien quan'.split(' ').forEach(function (w) { P2_STOP[w] = 1; });
+  function p2Terms(x) { var seen = {}, out = []; p2Norm(x).split(' ').forEach(function (w) { if (w.length >= 3 && !P2_STOP[w] && !seen[w]) { seen[w] = 1; out.push(w); } }); return out; }
+  /** Gợi ý 5 mã sản phẩm khớp nhất với nội dung công việc (thuật toán chấm điểm của hàm KPI_GY_Tim_ trong Mã.gs của bảng tính). */
+  function p2Suggest(text) {
+    var q = p2Norm(text), terms = p2Terms(text), cat = p2Cat();
+    if (!q || !terms.length) return [];
+    var typeMatch = cat.map(function (c) { return p2Norm(c.type); }).filter(function (t) { return t && t.length > 3 && (' ' + q + ' ').indexOf(' ' + t + ' ') >= 0; }).sort(function (a, b) { return b.length - a.length; })[0] || '';
+    var pairs = []; for (var i = 0; i < terms.length - 1; i++) pairs.push(terms[i] + ' ' + terms[i + 1]);
+    var ranked = [];
+    cat.forEach(function (c, idx) {
+      var typ = p2Norm(c.type), nam = p2Norm(c.name), muc = p2Norm(c.purpose), vd = p2Norm(c.example), set = function (x) { var o = {}; p2Terms(x).forEach(function (w) { o[w] = 1; }); return o; };
+      var ns = set(nam), ms = set(muc), vs = set(vd), score = 0, matched = [];
+      terms.forEach(function (w) { if (ns[w]) { score += 6; matched.push(w); } else if (ms[w]) { score += 3; matched.push(w); } else if (vs[w]) { score += 1.5; matched.push(w); } });
+      if (!matched.length) return;
+      if (typeMatch) score += typ === typeMatch ? 18 : -20;
+      pairs.forEach(function (pr) { if ((' ' + nam + ' ').indexOf(' ' + pr + ' ') >= 0) score += 5; else if ((' ' + muc + ' ').indexOf(' ' + pr + ' ') >= 0) score += 2; else if ((' ' + vd + ' ').indexOf(' ' + pr + ' ') >= 0) score += 0.5; });
+      if (nam && q.indexOf(nam) >= 0) score += 16;
+      ranked.push({ c: c, score: score, matched: matched.slice(0, 7), idx: idx });
+    });
+    ranked.sort(function (a, b) { return b.score - a.score || a.idx - b.idx; });
+    return ranked.slice(0, 5);
+  }
+  function p2HqtSel(r, ri, k, can) {
+    var cur = r[k];
+    if (!can) return cur === '' || cur == null ? '<span class="muted">–</span>' : '<b>' + fmt(Number(cur)) + '</b><div class="muted small">' + h((KPI_HQT[k].filter(function (o) { return o[0] === Number(cur); })[0] || ['', ''])[1]) + '</div>';
+    return '<select data-p2h="' + k + '" data-r="' + ri + '" aria-label="Hệ số ' + k + '"><option value="">– chọn –</option>' +
+      KPI_HQT[k].map(function (o) { return '<option value="' + o[0] + '"' + (cur !== '' && cur != null && Number(cur) === o[0] ? ' selected' : '') + '>' + fmt(o[0]) + ' · ' + h(o[1]) + '</option>'; }).join('') + '</select>';
+  }
+  function p2RowHtml(r, ri) {
+    var d = P2.d, edit = d.perms.canEdit && !r.locked, mgr = d.perms.canScore, cat = p2Cat(), g = p2G(r), p = p2P(r), miss = p2Missing(r);
+    var types = [], seenT = {}; cat.forEach(function (c) { if (!seenT[c.type]) { seenT[c.type] = 1; types.push(c.type); } });
+    var purposes = [], seenP = {}; cat.forEach(function (c) { if (c.type === r.type && !seenP[c.purpose]) { seenP[c.purpose] = 1; purposes.push(c.purpose); } });
+    var prods = cat.filter(function (c) { return c.type === r.type && c.purpose === r.purpose; });
+    var cur = r.code ? (S.cat || []).filter(function (c) { return c.id === r.code; })[0] : null;
+    var td = function (label, cls, inner) { return '<td data-l="' + label + '"' + (cls ? ' class="' + cls + '"' : '') + '>' + inner + '</td>'; };
+    var tags = (r.locked ? '<span class="badge b-green">🔒 Đã chấm' + (r.at ? ' ' + h(String(r.at).slice(0, 5)) : '') + (r.byName ? ' · ' + h(r.byName) : '') + '</span>' : miss.length ? '<span class="badge b-amber">Thiếu: ' + h(miss.join(', ')) + '</span>' : '<span class="badge b-blue">Đủ, chờ chấm</span>');
+    return '<tr data-p2row="' + ri + '"' + (r.locked ? ' class="locked"' : '') + '>' +
+      td('TT', 'c-tt center', String(ri + 1)) +
+      td('Nội dung công việc', 'c-name', (edit ? '<textarea rows="3" data-p2f="name" data-r="' + ri + '" placeholder="Ghi rõ việc đã làm, ví dụ: Tham mưu công văn góp ý dự thảo kế hoạch…">' + h(r.name || '') + '</textarea>' +
+        '<div class="flow no-print"><button type="button" class="btn sm" data-act="p2Sug" data-r="' + ri + '">Gợi ý mã từ nội dung</button><input type="url" data-p2f="link" data-r="' + ri + '" value="' + h(r.link || '') + '" placeholder="Đường dẫn minh chứng (không bắt buộc)" style="flex:1 1 160px"></div>'
+        : '<div class="tname">' + h(r.name) + '</div>' + (r.link ? '<a class="small" href="' + h(r.link) + '" target="_blank" rel="noopener">Minh chứng</a>' : '')) +
+        '<div class="tags">' + tags + '</div>' + (!mgr && r.note ? '<div class="mnote"><b>Nhận xét của lãnh đạo:</b> ' + h(r.note) + '</div>' : '')) +
+      td('Ngày thực hiện', '', edit ? '<input type="date" data-p2f="workDate" data-r="' + ri + '" value="' + h(r.workDate || '') + '" min="' + h(d.period.startDate || '') + '" max="' + h(d.period.endDate || '') + '">' : h(fdate(r.workDate))) +
+      td('Loại sản phẩm', '', edit ? '<select data-p2c="type" data-r="' + ri + '"><option value="">– chọn –</option>' + opts(types.map(function (x) { return [x, x]; }), r.type) + '</select>' : h(r.type)) +
+      td('Mục đích', '', edit ? '<select data-p2c="purpose" data-r="' + ri + '"' + (r.type ? '' : ' disabled') + '><option value="">– chọn –</option>' + opts(purposes.map(function (x) { return [x, x]; }), r.purpose) + '</select>' : h(r.purpose)) +
+      td('Tên sản phẩm', 'c-sp', (edit ? '<select data-p2c="code" data-r="' + ri + '"' + (r.purpose ? '' : ' disabled') + '><option value="">– chọn –</option>' + opts(prods.map(function (c) { return [c.id, c.name]; }), r.code) + '</select>' : h(r.spName || (cur ? cur.name : ''))) +
+        (cur && cur.example ? '<div class="no-print"><a role="button" style="cursor:pointer" class="small" data-act="p2Ex" data-r="' + ri + '">Xem ví dụ sản phẩm</a></div>' : '')) +
+      td('Mã', 'auto center', '<b>' + h(r.code || '') + '</b>') + td('Thời gian chuẩn', 'auto', h(cur ? cur.time : r.timeStd || '')) +
+      td('Giờ thực tế', '', edit ? '<input type="number" min="0.01" step="any" data-p2f="actual" data-r="' + ri + '" value="' + h(r.actual === '' || r.actual == null ? '' : r.actual) + '" placeholder="số giờ">' : fmt(r.actual)) +
+      td('Số lượng', '', edit ? '<input type="number" min="0.01" step="any" data-p2f="qty" data-r="' + ri + '" value="' + h(r.qty === '' || r.qty == null ? '' : r.qty) + '">' : fmt(r.qty)) +
+      td('Đơn vị tính', 'auto', h(cur ? cur.unit : r.unit || '')) + td('Điểm chuẩn', 'auto num', '<b data-p2g="' + ri + '">' + (g ? f4(g) : '') + '</b>') +
+      td('H – hoàn thành', 'hq', p2HqtSel(r, ri, 'H', mgr)) + td('Q – chất lượng', 'hq', p2HqtSel(r, ri, 'Q', mgr)) + td('T – tiến độ', 'hq', p2HqtSel(r, ri, 'T', mgr)) +
+      td('Điểm thực đạt', 'auto num', '<b data-p2p="' + ri + '">' + (p == null ? '' : f4(p)) + '</b>') +
+      (mgr ? td('Nhận xét, lý do', 'c-note', '<textarea rows="2" data-p2f="note" data-r="' + ri + '" placeholder="Bắt buộc khi H, Q hoặc T dưới 1">' + h(r.note || '') + '</textarea>' +
+        (r.locked ? '<div class="flow no-print"><button type="button" class="btn sm warn" data-act="p2Open" data-r="' + ri + '">Bỏ chấm, trả lại để sửa</button></div>' : '')) : '') +
+      (d.perms.canEdit ? td('', 'no-print center', edit ? '<button type="button" class="btn sm danger" data-act="p2Del" data-r="' + ri + '">Xoá</button>' : '') : '') + '</tr>';
+  }
+  function p2TableHtml() {
+    var d = P2.d, mgr = d.perms.canScore;
+    return '<div class="tbl-wrap p2w"><table class="tbl p2t"><thead><tr><th>TT</th><th>Nội dung công việc<div class="hint">cán bộ nhập</div></th><th>Ngày thực hiện</th><th>Loại sản phẩm</th><th>Mục đích</th><th>Tên sản phẩm</th>' +
+      '<th class="auto">Mã<div class="hint">tự nhảy</div></th><th class="auto">Thời gian chuẩn</th><th>Giờ thực tế<div class="hint">chỉ nhập số giờ</div></th><th>Số lượng</th><th class="auto">Đơn vị tính</th><th class="auto">Điểm chuẩn</th>' +
+      '<th class="hq">Hệ số hoàn thành<div class="hint">lãnh đạo chọn</div></th><th class="hq">Hệ số chất lượng</th><th class="hq">Hệ số tiến độ</th><th class="auto">Điểm thực đạt</th>' + (mgr ? '<th class="hq">Nhận xét, lý do</th>' : '') + (d.perms.canEdit ? '<th class="no-print"></th>' : '') + '</tr></thead><tbody>' +
+      (P2.rows.map(p2RowHtml).join('') || '<tr><td colspan="18" class="muted center">Chưa có dòng kê khai nào.</td></tr>') + '</tbody></table></div>';
+  }
+  function p2KpiHtml() {
+    var sm = P2.d.sum;
+    return '<div class="card"><h2>Bảng tính KPI</h2><div class="stats" style="margin-bottom:10px">' +
+      '<div class="stat"><div class="v">' + (p2Pct(sm.a) || '–') + '</div><div class="l">Hệ số a · khối lượng hoàn thành</div></div>' +
+      '<div class="stat"><div class="v">' + (p2Pct(sm.b) || '–') + '</div><div class="l">Hệ số b · có xét chất lượng</div></div>' +
+      '<div class="stat"><div class="v">' + (p2Pct(sm.c) || '–') + '</div><div class="l">Hệ số c · có xét tiến độ</div></div>' +
+      '<div class="stat hl"><div class="v">' + (p2Pct(sm.kpi) || '–') + '</div><div class="l">KPI = trung bình của a, b, c</div><div class="x">Điểm chuẩn ' + f4(sm.G) + ' · thực đạt ' + f4(sm.P) + '</div></div></div>' +
+      '<p style="margin:0"><b>Trạng thái:</b> ' + h(sm.status) + (sm.issues.length ? ' <a role="button" style="cursor:pointer" data-act="p2Why">Kiểm tra vì sao KPI chưa hiện</a>' : '') + '</p>' +
+      '<p class="muted small" style="margin:6px 0 0">Số liệu tính theo lần lưu gần nhất. KPI chỉ hiện khi mọi dòng đã kê đủ và đã được chấm đủ H, Q, T.</p></div>';
+  }
+  function p2Pp1Html() {
+    var x = P2.d.pp1, o = P2.d.owner;
+    if (!x || !x.rows.length) return '<div class="card"><h2>Kết quả theo PP1 trong cùng kỳ</h2><p class="muted" style="margin:0">Kỳ này ' + (o.id === S.user.id ? 'anh/chị' : h(o.fullName)) + ' chưa có phiếu theo PP1.</p></div>';
+    return '<div class="card"><h2>Kết quả theo PP1 trong cùng kỳ (chỉ xem để đối chiếu)</h2><div class="stats" style="margin-bottom:10px"><div class="stat"><div class="v">' + f4(x.G) + '</div><div class="l">Điểm giao chuẩn đã xác nhận (G)</div></div>' +
+      '<div class="stat s-done"><div class="v">' + f4(x.P) + '</div><div class="l">Điểm thực đạt (P)</div></div><div class="stat hl"><div class="v">' + (p2Pct(x.kpi) || '–') + '</div><div class="l">Tỷ lệ KPI theo PP1 = P / G</div></div></div>' +
+      '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>TT</th><th>Công việc</th><th>Mã</th><th class="num">Số lượng</th><th>Mức N</th><th class="num">Điểm giao</th><th>H · Q · T</th><th class="num">Điểm thực đạt</th><th>Tình trạng</th></tr></thead><tbody>' +
+      x.rows.map(function (t, i) {
+        return '<tr><td>' + (i + 1) + '</td><td>' + h(t.name) + (t.note ? '<div class="muted small">' + h(t.note) + '</div>' : '') + '</td><td>' + h(t.code || '–') + '</td><td class="num">' + fmt(t.qty) + '</td><td>' + h(t.n || '') + '</td><td class="num">' + f4(t.g) + '</td>' +
+          '<td class="nowrap">' + (t.H == null ? '<span class="muted">chấm theo A–E</span>' : fmt(t.H) + ' · ' + fmt(t.Q) + ' · ' + fmt(t.T)) + '</td><td class="num"><b>' + (t.p == null ? '' : f4(t.p)) + '</b></td><td>' + (t.locked ? '<span class="badge b-green">Đã chấm</span>' : '<span class="badge b-gray">Chưa chấm</span>') + '</td></tr>';
+      }).join('') + '</tbody></table></div><p class="muted small" style="margin:8px 0 0">Số liệu lấy trực tiếp từ phiếu PP1, không sao chép. Mở phiếu PP1: <a href="#/' + (o.id === S.user.id ? 'tudanhgia' : 'phieu/' + encodeURIComponent(o.id)) + '">xem phiếu</a>.</p></div>';
+  }
+  function p2Html() {
+    var d = P2.d, o = d.owner, mine = o.id === S.user.id, p = d.perms;
+    var banner = p.canEdit ? '' : p.canScore ? '<div class="banner blue">Anh/chị là người chấm: chọn H, Q, T cho từng dòng đã kê đủ rồi bấm “Lưu chấm điểm”. Hệ số dưới 1 phải ghi lý do.</div>' :
+      mine ? '<div class="banner amber">Kỳ này đã chốt nhập hoặc tài khoản không tự kê, nên chỉ xem được.</div>' : '';
+    return (mine ? '' : '<p class="no-print"><a href="#/pp2duyet">‹ Quay lại danh sách</a></p>') +
+      '<div class="card"><h2>' + h(o.fullName) + '</h2><div class="muted">' + h(o.title || '') + ' · ' + h(unitName(o.unitId)) + ' · ' + h(d.period.name) + '</div>' +
+      '<div class="muted small">Người phụ trách đánh giá: <b>' + h(d.managerName || 'chưa khai') + '</b></div></div>' + banner +
+      (p.canEdit ? '<details class="card guide no-print"' + (P2.rows.length ? '' : ' open') + '><summary>Cách kê khai theo PP2</summary><ol><li>Ghi <b>nội dung công việc</b> và <b>ngày thực hiện</b>.</li><li>Bấm <b>Gợi ý mã từ nội dung</b>, hoặc tự chọn lần lượt <b>Loại sản phẩm → Mục đích → Tên sản phẩm</b>. Mã, thời gian chuẩn, đơn vị tính và điểm chuẩn tự nhảy.</li>' +
+        '<li>Nhập <b>giờ thực tế</b> (chỉ số giờ, ví dụ 0,5 hoặc 2) và <b>số lượng</b>.</li><li>Bấm <b>Lưu kê khai</b>. Lãnh đạo trực tiếp sẽ chấm H, Q, T; dòng đã chấm bị khoá.</li></ol></details>' : '') +
+      p2KpiHtml() + '<div class="card"><h2>Bảng kê khai' + (p.canScore ? ' và chấm H – Q – T' : '') + '</h2><div id="p2Box">' + p2TableHtml() + '</div>' +
+      '<div class="actions no-print" style="margin-top:12px">' + (p.canEdit ? '<button class="btn" data-act="p2Add">＋ Thêm dòng</button><button class="btn primary" data-act="p2Save">Lưu kê khai</button>' : '') +
+      (p.canScore ? '<button class="btn" data-act="p2Fill">Điền 1 – 1 – 1 cho các dòng đủ, chưa chấm</button><button class="btn ok" data-act="p2Score">Lưu chấm điểm</button>' : '') + '</div></div>' + p2Pp1Html();
+  }
+  function p2Redraw() { var b = document.getElementById('p2Box'); if (b) b.innerHTML = p2TableHtml(); }
+  function p2ListHtml() {
+    var rows = P2.list.rows.slice().sort(function (a, b) { return (b.wait - a.wait) || a.user.fullName.localeCompare(b.user.fullName, 'vi'); });
+    var wait = rows.reduce(function (n, r) { return n + r.wait; }, 0), ready = rows.filter(function (r) { return r.kpi != null; }).length;
+    return '<div class="stats"><div class="stat hl"><div class="v">' + rows.length + '</div><div class="l">Người trong danh sách</div></div><div class="stat"><div class="v">' + wait + '</div><div class="l">Dòng đang chờ chấm H, Q, T</div></div>' +
+      '<div class="stat s-done"><div class="v">' + ready + '</div><div class="l">Người đã có KPI</div></div></div>' +
+      '<div class="card"><h2>Đánh giá cấp dưới theo PP2 · ' + h(P2.list.period.name) + '</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Họ tên</th><th>Đơn vị</th><th class="num">Số dòng</th><th class="num">Đã chấm</th><th class="num">Chờ chấm</th><th class="num">Kê thiếu</th>' +
+      '<th class="num">a</th><th class="num">b</th><th class="num">c</th><th class="num">KPI</th><th>Trạng thái</th></tr></thead><tbody>' +
+      (rows.map(function (r) {
+        return '<tr class="click" data-act="p2Go" data-u="' + h(r.user.id) + '"><td><b>' + h(r.user.fullName) + '</b><div class="muted small">' + h(r.user.title || '') + '</div></td><td>' + h(unitName(r.user.unitId)) + '</td><td class="num">' + r.rows + '</td><td class="num">' + r.done + '</td>' +
+          '<td class="num">' + (r.wait ? '<span class="badge b-amber">' + r.wait + '</span>' : 0) + '</td><td class="num">' + r.lack + '</td><td class="num">' + p2Pct(r.a) + '</td><td class="num">' + p2Pct(r.b) + '</td><td class="num">' + p2Pct(r.c) + '</td><td class="num"><b>' + p2Pct(r.kpi) + '</b></td><td class="small">' + h(r.rows ? r.status : 'Chưa kê khai') + '</td></tr>';
+      }).join('') || '<tr><td colspan="11" class="muted">Anh/chị chưa phụ trách đánh giá ai.</td></tr>') + '</tbody></table></div><p class="muted small" style="margin:8px 0 0">Bấm vào một dòng để mở bảng kê khai của người đó và chấm H, Q, T.</p></div>';
+  }
+  function p2ApplyCode(r, code) {
+    var c = (S.cat || []).filter(function (x) { return x.id === code; })[0];
+    if (!c) { r.code = ''; r.spName = ''; r.std = 0; r.unit = ''; r.timeStd = ''; return; }
+    r.type = c.type; r.purpose = c.purpose; r.code = c.id; r.spName = c.name; r.std = Number(c.point) || 0; r.unit = c.unit; r.timeStd = c.time;
+  }
+  document.addEventListener('input', function (ev) {
+    var el = ev.target;
+    if (!P2.d || !el.dataset || !el.dataset.p2f) return;
+    var r = P2.rows[+el.dataset.r]; if (!r) return;
+    r[el.dataset.p2f] = el.value;
+    if (el.dataset.p2f === 'qty') { var g = p2G(r), gb = document.querySelector('[data-p2g="' + el.dataset.r + '"]'); if (gb) gb.textContent = g ? f4(g) : ''; }
+  });
+  document.addEventListener('change', function (ev) {
+    var el = ev.target;
+    if (!P2.d || !el.dataset) return;
+    var r = P2.rows[+el.dataset.r]; if (!r) return;
+    if (el.dataset.p2c) {
+      if (el.dataset.p2c === 'type') { r.type = el.value; r.purpose = ''; p2ApplyCode(r, ''); }
+      else if (el.dataset.p2c === 'purpose') { r.purpose = el.value; p2ApplyCode(r, ''); }
+      else p2ApplyCode(r, el.value);
+      p2Redraw();
+    } else if (el.dataset.p2h) {
+      r[el.dataset.p2h] = el.value === '' ? '' : Number(el.value);
+      if (el.dataset.p2h === 'Q' && r.Q === 0) r.H = 0;
+      p2Redraw();
+    } else if (el.dataset.p2f && (el.dataset.p2f === 'workDate' || el.dataset.p2f === 'actual' || el.dataset.p2f === 'qty')) p2Redraw();
+  });
+
   /* ---------- Trợ giúp chấm H, Q, T đúng Báo cáo thí điểm KPI ---------- */
   var HELP_Q = [['1|', 'Đạt yêu cầu'], ['0.8|Có lỗi chính tả ở lần trình chính thức thứ nhất', '0,8 · Có lỗi chính tả ở lần trình chính thức thứ nhất'],
     ['0.8|Sai thể thức thuộc trách nhiệm người soạn thảo', '0,8 · Sai thể thức thuộc trách nhiệm người soạn thảo'], ['0.8|Thiếu nội dung cơ bản cần bổ sung', '0,8 · Thiếu nội dung cơ bản, không phải làm lại phần lớn'],
@@ -1664,6 +1835,59 @@
       toast('Đã giao cho ' + (r.results.length - bad.length) + ' người.' + (bad.length ? ' Không giao được cho ' + bad.length + ' người: ' + bad.map(function (x) { return (GV.d.names[x.userId] || x.userId) + ' (' + x.error + ')'; }).join('; ') : ''), !!bad.length);
       GV.pick = {}; S.ov = null;
       location.hash = '#/giaoviec/theodoi'; render();
+    });
+  };
+  ACT.p2Add = function () { P2.rows.push({ id: '', name: '', workDate: '', type: '', purpose: '', code: '', actual: '', qty: 1, std: 0 }); p2Redraw(); var ta = document.querySelectorAll('#p2Box textarea[data-p2f=name]'); if (ta.length) ta[ta.length - 1].focus(); };
+  ACT.p2Del = function (el) { var r = P2.rows[+el.dataset.r]; if (r && (!String(r.name || '').trim() || confirm('Xoá dòng kê khai này?'))) { P2.rows.splice(+el.dataset.r, 1); p2Redraw(); } };
+  ACT.p2Save = function (el) {
+    run(el, async function () {
+      p2Set(await api('pp2Save', { periodId: S.periodId, rows: P2.rows.map(function (r) { return { id: r.id, name: r.name, workDate: r.workDate, type: r.type, purpose: r.purpose, code: r.code, actual: r.actual, qty: r.qty, link: r.link }; }) }));
+      $('#view').innerHTML = p2Html();
+      toast('Đã lưu kê khai. ' + P2.d.sum.status);
+    });
+  };
+  ACT.p2Sug = function (el) {
+    var ri = +el.dataset.r, r = P2.rows[ri], list = p2Suggest(r.name);
+    if (!String(r.name || '').trim()) return toast('Hãy ghi nội dung công việc trước rồi bấm gợi ý.', true);
+    modal.innerHTML = '<div class="dlg" style="max-width:760px"><h2>Gợi ý mã sản phẩm</h2><p class="small">' + h(r.name) + '</p>' + (list.length ? '<div class="tbl-wrap"><table class="tbl"><tbody>' + list.map(function (x) {
+      var c = x.c;
+      return '<tr><td><b>' + h(c.id) + '</b> · ' + h(c.name) + '<div class="muted small">' + h(c.type) + ' › ' + h(c.purpose) + ' · ' + h(c.level) + ' · ' + f4(c.point) + ' điểm/' + h(c.unit || 'sản phẩm') + ' · ' + h(c.time || '') + '</div>' +
+        '<div class="muted small">Từ khớp: ' + h(x.matched.join(', ')) + '</div>' + (c.example ? '<details class="small"><summary>Ví dụ sản phẩm</summary>' + h(c.example) + '</details>' : '') + '</td>' +
+        '<td class="right"><button class="btn sm primary" data-act="p2Pick" data-r="' + ri + '" data-id="' + h(c.id) + '">Chọn</button></td></tr>';
+    }).join('') + '</tbody></table></div>' : '<p class="muted">Chưa tìm được mã phù hợp. Hãy ghi nội dung rõ hơn (nêu loại văn bản, sản phẩm), hoặc tự chọn Loại sản phẩm → Mục đích → Tên sản phẩm.</p>') +
+      '<p class="muted small">Gợi ý chỉ để tham khảo; cán bộ chịu trách nhiệm chọn đúng mã, lãnh đạo kiểm tra khi chấm.</p><div class="actions"><button class="btn" data-act="closeModal">Đóng</button></div></div>';
+  };
+  ACT.p2Pick = function (el) { p2ApplyCode(P2.rows[+el.dataset.r], el.dataset.id); modal.innerHTML = ''; p2Redraw(); };
+  ACT.p2Ex = function (el) {
+    var r = P2.rows[+el.dataset.r], c = (S.cat || []).filter(function (x) { return x.id === r.code; })[0];
+    if (c) modal.innerHTML = '<div class="dlg" style="max-width:680px"><h2>' + h(c.id) + ' · ' + h(c.name) + '</h2><p class="muted small">' + h(c.type) + ' › ' + h(c.purpose) + ' · thời gian chuẩn ' + h(c.time || '') + ' · ' + h(c.level) + ' · ' + f4(c.point) + ' điểm/' + h(c.unit || 'sản phẩm') + '</p><p style="white-space:pre-wrap">' + h(c.example || 'Chưa có ví dụ.') + '</p><div class="actions"><button class="btn" data-act="closeModal">Đóng</button></div></div>';
+  };
+  ACT.p2Why = function () {
+    var sm = P2.d.sum;
+    modal.innerHTML = '<div class="dlg" style="max-width:640px"><h2>Kiểm tra vì sao KPI chưa hiện</h2><p>Đã chấm đủ: <b>' + sm.done + '</b> dòng · Kê khai chưa đủ: <b>' + sm.lack + '</b> dòng · Chưa chấm H, Q, T: <b>' + sm.wait + '</b> dòng · Tổng điểm chuẩn của các dòng đã chấm: <b>' + f4(sm.G) + '</b></p>' +
+      (sm.issues.length ? '<p><b>Các dòng cần xử lý:</b></p><ul>' + sm.issues.slice(0, 25).map(function (x) { return '<li>' + h(x) + '</li>'; }).join('') + '</ul>' + (sm.issues.length > 25 ? '<p class="muted">… còn ' + (sm.issues.length - 25) + ' dòng khác.</p>' : '') : '<p>Không có dòng vướng dữ liệu.</p>') +
+      '<div class="actions"><button class="btn" data-act="closeModal">Đóng</button></div></div>';
+  };
+  ACT.p2Go = function (el) { location.hash = '#/pp2phieu/' + encodeURIComponent(el.dataset.u); };
+  ACT.p2Fill = function () { var n = 0; P2.rows.forEach(function (r) { if (!r.locked && !p2Missing(r).length && (r.H === '' || r.H == null)) { r.H = 1; r.Q = 1; r.T = 1; n++; } }); p2Redraw(); toast(n ? 'Đã điền 1 – 1 – 1 cho ' + n + ' dòng. Sửa lại dòng nào có sai sót hoặc chậm rồi bấm Lưu chấm điểm.' : 'Không có dòng nào đủ điều kiện để điền.'); };
+  ACT.p2Score = function (el) {
+    var has3 = function (r) { return r.H !== '' && r.H != null && r.Q !== '' && r.Q != null && r.T !== '' && r.T != null; };
+    var items = P2.rows.filter(function (r) { return has3(r) && (!r.locked || r.H !== r.h0 || r.Q !== r.q0 || r.T !== r.t0 || (r.note || '') !== r.n0); });
+    if (!items.length) return toast('Chưa có dòng nào được chọn đủ H, Q, T (hoặc chưa đổi gì so với lần chấm trước).', true);
+    for (var i = 0; i < items.length; i++) { var r = items[i]; if ((r.H < 1 || r.Q < 1 || r.T < 1) && !String(r.note || '').trim()) return toast('Dòng “' + String(r.name).slice(0, 40) + '” bị giảm điểm: hãy ghi lý do ở ô nhận xét.', true); }
+    run(el, async function () {
+      p2Set(await api('pp2Score', { periodId: S.periodId, userId: P2.d.owner.id, items: items.map(function (r) { return { id: r.id, h: r.H, q: r.Q, t: r.T, note: r.note || '' }; }) }));
+      $('#view').innerHTML = p2Html();
+      toast('Đã lưu chấm điểm ' + items.length + ' dòng. ' + P2.d.sum.status);
+    });
+  };
+  ACT.p2Open = function (el) {
+    var r = P2.rows[+el.dataset.r];
+    if (!String(r.note || '').trim()) return toast('Ghi nhận xét cho dòng này để cán bộ biết cần sửa gì, rồi bấm lại.', true);
+    run(el, async function () {
+      p2Set(await api('pp2Score', { periodId: S.periodId, userId: P2.d.owner.id, mode: 'open', items: [{ id: r.id, note: r.note }] }));
+      $('#view').innerHTML = p2Html();
+      toast('Đã bỏ chấm và trả lại dòng này cho cán bộ sửa.');
     });
   };
   ACT.taskOk = function (el) { flowCall(el, 'taskAccept', { ok: 1 }, 'Đã xác nhận nhiệm vụ.'); };

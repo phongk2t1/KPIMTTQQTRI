@@ -17,10 +17,10 @@ var KPI_TABLES = {
   // Cán bộ tự đánh giá: mỗi công việc một dòng, cột như biểu Excel mẫu
   Tasks: ['userId', 'period', 'evalId', 'id', 'order', 'name', 'product', 'qty', 'month', 'a', 'b', 'c', 'd', 'e', 's', 'n', 'point',
     'link', 'repeat', 'from', 'pm', 'evaluated', 'evaluatedAt', 'updatedAt', 'note', 'by',
-    'deadline', 'doneDate', 'progress', 'bonus', 'feedback', 'feedbackAt', 'feedbackDone', 'code', 'unit', 'std', 'hours', 'g', 'nstd', 'meta'],
+    'deadline', 'doneDate', 'progress', 'bonus', 'feedback', 'feedbackAt', 'feedbackDone', 'code', 'unit', 'std', 'hours', 'g', 'nstd', 'meta', 'pp', 'workDate', 'purpose', 'spName', 'timeStd', 'actual'],
   // Người phụ trách đánh giá: mỗi công việc một dòng, độc lập với phần cán bộ tự chấm
   Reviews: ['userId', 'period', 'evalId', 'id', 'order', 'name', 'product', 'qty', 'month', 'a', 'b', 'c', 'd', 'e', 's', 'n', 'point',
-    'reviewerId', 'date', 'time', 'lock', 'note', 'progress', 'doneDate', 'bonus', 'overTime', 'overQuality', 'h', 'q', 't', 'score'],
+    'reviewerId', 'date', 'time', 'lock', 'note', 'progress', 'doneDate', 'bonus', 'overTime', 'overQuality', 'h', 'q', 't', 'score', 'pp'],
   // Danh mục sản phẩm chuẩn của cơ quan (thí điểm KPI): mỗi mã một dòng, cột như tệp "DANH MỤC SẢN PHẨM (THÍ ĐIỂM KPI)"
   Catalog: ['order', 'type', 'purpose', 'name', 'id', 'example', 'time', 'level', 'point', 'unit', 'hours', 'active', 'updatedAt'],
   // Kho công việc mẫu: cột như biểu Excel mẫu, thêm CCCD của vị trí trước cột mã công việc
@@ -58,7 +58,8 @@ var KPI_LABELS = {
     evaluated: 'Đã đánh giá', evaluatedAt: 'Ngày giờ đánh giá', updatedAt: 'Cập nhật', note: 'Nhận xét của người đánh giá', by: 'Người thêm việc (CCCD)',
     deadline: 'Hạn hoàn thành', doneDate: 'Ngày hoàn thành', progress: 'Tiến độ (%)', bonus: 'Điểm thưởng đề xuất (%)',
     feedback: 'Phản hồi của cán bộ', feedbackAt: 'Lúc phản hồi', feedbackDone: 'Phản hồi đã xem xét',
-    code: 'Mã sản phẩm', unit: 'Đơn vị tính', std: 'Điểm chuẩn một đơn vị', hours: 'Giờ chuẩn một đơn vị', g: 'Điểm giao chuẩn (G)', nstd: 'Mức N theo danh mục', meta: 'Giao nhận nhiệm vụ (ghi tự động)'
+    code: 'Mã sản phẩm', unit: 'Đơn vị tính', std: 'Điểm chuẩn một đơn vị', hours: 'Giờ chuẩn một đơn vị', g: 'Điểm giao chuẩn (G)', nstd: 'Mức N theo danh mục', meta: 'Giao nhận nhiệm vụ (ghi tự động)',
+    pp: 'Phương pháp (trống = PP1, 2 = PP2)', workDate: 'Ngày thực hiện (PP2)', purpose: 'Mục đích (PP2)', spName: 'Tên sản phẩm (PP2)', timeStd: 'Thời gian chuẩn (PP2)', actual: 'Giờ thực tế (PP2)'
   },
   Reviews: {
     userId: 'CCCD', period: 'Kỳ đánh giá', evalId: 'Mã phiếu', id: 'Mã công việc', order: 'TT', name: 'Tên công việc', product: 'Sản phẩm',
@@ -66,7 +67,7 @@ var KPI_LABELS = {
     c: 'C - Phạm vi phối hợp', d: 'D - Mức độ ảnh hưởng, trách nhiệm và rủi ro', e: 'E - Mức độ đầy đủ, rõ ràng và ổn định của đầu vào',
     s: 'S', n: 'N', point: 'Điểm của N', reviewerId: 'CCCD người đánh giá', date: 'Ngày đánh giá', time: 'Giờ đánh giá', lock: 'Khoá/Mở', note: 'Nhận xét',
     progress: 'Tiến độ được xác nhận (%)', doneDate: 'Ngày hoàn thành được xác nhận', bonus: 'Điểm thưởng (%)', overTime: 'Vượt tiến độ', overQuality: 'Vượt chất lượng',
-    h: 'Hệ số H (khối lượng)', q: 'Hệ số Q (chất lượng)', t: 'Hệ số T (tiến độ)', score: 'Điểm thực đạt (P)'
+    h: 'Hệ số H (khối lượng)', q: 'Hệ số Q (chất lượng)', t: 'Hệ số T (tiến độ)', score: 'Điểm thực đạt (P)', pp: 'Phương pháp (trống = PP1, 2 = PP2)'
   },
   Catalog: {
     order: 'TT', type: 'Loại sản phẩm', purpose: 'Mục đích', name: 'Tên sản phẩm', id: 'Mã Sản phẩm', example: 'Ví dụ sản phẩm thực tế', time: 'Thời gian tiêu chuẩn',
@@ -152,6 +153,7 @@ var KPI_LOG_ACTIONS = {
   overview: ['xem', 'Xem tổng quan, KPI tổng hợp'], stats: ['xem', 'Xem thống kê tổng quan'], getEvaluation: ['xem', 'Xem phiếu đánh giá'],
   tasksFrom: ['xem', 'Lấy việc từ kỳ trước'], saveSelf: ['sua', 'Lưu / nộp phiếu tự đánh giá'], review: ['sua', 'Duyệt / trả lại phiếu'],
   score: ['sua', 'Chấm điểm, nhận xét, giao việc'], reopen: ['sua', 'Mở lại phiếu đã chốt'], upload: ['them', 'Tải tệp lên'],
+  pp2Get: ['xem', 'Xem phiếu PP2'], pp2List: ['xem', 'Xem danh sách đánh giá PP2'], pp2Save: ['sua', 'Lưu kê khai PP2'], pp2Score: ['sua', 'Chấm H, Q, T (PP2)'],
   feedback: ['sua', 'Phản hồi không tán thành'], taskAccept: ['sua', 'Xác nhận / phản hồi nhiệm vụ được giao'], taskReassign: ['sua', 'Giao lại / rút nhiệm vụ'], taskExtend: ['sua', 'Gia hạn nhiệm vụ'],
   assignBoard: ['xem', 'Xem trang Giao việc'], assignMany: ['them', 'Giao việc cho nhiều người'],
   evidenceSources: ['xem', 'Xem tệp kết quả của cấp dưới'], evidenceBorrow: ['them', 'Lấy tệp kết quả của cấp dưới'], evidenceAdd: ['them', 'Thêm minh chứng'], evidenceRemove: ['xoa', 'Xoá minh chứng'], evidenceGet: ['xem', 'Mở minh chứng'],
@@ -1241,6 +1243,176 @@ function KPI_createCore(store, env) {
     return { items: evidenceOf(me.id, period.id).filter(function (x) { return str(x.taskId) === taskId; }).map(evidenceOut) };
   };
 
+  /* ---------- ĐÁNH GIÁ KPI PP2: kê khai theo ngày, chấm H – Q – T, tính a, b, c, KPI như bảng tính "Hệ thống kê khai và đánh giá KPI" ----------
+   * Lưu chung trang PhieuDanhGia (phần cán bộ kê) và DanhGia (phần lãnh đạo chấm) với cột "Phương pháp" = 2.
+   * Mã phiếu của PP2 có dạng PP2|<mã kỳ>|<CCCD>, không trùng mã phiếu nào của PP1 và không có dòng ở TongHopPhieu,
+   * nên mọi trang của PP1 (tự đánh giá, đánh giá cấp dưới, tổng quan, KPI tổng hợp, xếp loại, giao việc) không đọc thấy các dòng này. */
+  function pp2Key(period, userId) { return 'PP2|' + str(period.id) + '|' + str(userId); }
+  function pp2Row(r, v) {
+    var o = { id: str(r.id), name: str(r.name), workDate: str(r.workDate), type: str(r.product), purpose: str(r.purpose), spName: str(r.spName), code: str(r.code), timeStd: str(r.timeStd),
+      actual: str(r.actual) === '' ? '' : num(r.actual), qty: str(r.qty) === '' ? '' : num(r.qty), unit: str(r.unit), std: num(r.std), g: num(r.g), link: str(r.link) };
+    if (v && str(v.h) !== '') {
+      o.H = num(v.h); o.Q = num(v.q); o.T = num(v.t); o.by = str(v.reviewerId); o.at = (str(v.date) + ' ' + str(v.time)).trim(); o.locked = str(v.lock) === 'Khoá';
+      o.p = r4(o.g * o.H * (1 + o.Q + o.T) / 3);
+    }
+    if (v && str(v.note)) o.note = str(v.note);
+    return o;
+  }
+  function pp2Load(period, userId) {
+    var key = pp2Key(period, userId), rv = {};
+    store.group('Reviews', 'evalId', key).forEach(function (r) { rv[str(r.id)] = r; });
+    return store.group('Tasks', 'evalId', key).slice().sort(function (a, b) { return num(a.order) - num(b.order); }).map(function (r) { return pp2Row(r, rv[str(r.id)]); });
+  }
+  /** Các trường cán bộ còn thiếu của một dòng (đúng danh sách bắt buộc của bảng tính: mã sản phẩm không bắt buộc, điểm chuẩn phải lớn hơn 0). */
+  function pp2Missing(o) {
+    var miss = [];
+    if (!o.name) miss.push('Nội dung công việc');
+    if (!o.workDate) miss.push('Ngày thực hiện');
+    if (!o.type) miss.push('Loại sản phẩm');
+    if (!o.purpose) miss.push('Mục đích');
+    if (!o.spName) miss.push('Tên sản phẩm');
+    if (!(num(o.actual) > 0)) miss.push('Giờ thực tế');
+    if (!(num(o.qty) > 0)) miss.push('Số lượng');
+    if (o.spName && !(num(o.g) > 0) && num(o.qty) > 0) miss.push('Điểm chuẩn');
+    return miss;
+  }
+  function pp2Scored(o) { return has(o.H) && has(o.Q) && has(o.T) && o.locked; }
+  /** a, b, c, KPI của một người: chỉ tính khi không còn dòng kê khai thiếu hoặc chưa chấm (như ô R3:R7 của bảng tính). */
+  function pp2Sum(rows) {
+    var G = 0, GH = 0, GHQ = 0, GHT = 0, P = 0, done = 0, lack = 0, wait = 0, issues = [];
+    rows.forEach(function (o, i) {
+      var miss = pp2Missing(o);
+      if (miss.length) { lack++; issues.push('Dòng ' + (i + 1) + ': thiếu ' + miss.join(', ')); return; }
+      if (!pp2Scored(o)) { wait++; issues.push('Dòng ' + (i + 1) + ': chưa chấm H, Q, T'); return; }
+      G += o.g; GH += o.g * o.H; GHQ += o.g * o.H * o.Q; GHT += o.g * o.H * o.T; P += o.g * o.H * (1 + o.Q + o.T) / 3; done++;
+    });
+    var ready = !lack && !wait && G > 0;
+    var a = ready ? GH / G : null, b = ready ? GHQ / G : null, c = ready ? GHT / G : null;
+    return { rows: rows.length, done: done, lack: lack, wait: wait, issues: issues, G: r4(G), P: r4(P), ready: ready,
+      a: a, b: b, c: c, kpi: ready ? (a + b + c) / 3 : null,
+      status: lack || wait ? 'Chưa tính: ' + lack + ' dòng kê khai thiếu; ' + wait + ' dòng chưa chấm.' : G <= 0 ? 'Chưa có nhiệm vụ đã chấm đủ.' : 'Đã chấm đủ ' + done + ' nhiệm vụ' };
+  }
+  function pp2Write(period, owner, rows) {
+    var key = pp2Key(period, owner.id), base = { userId: str(owner.id), period: str(period.name), evalId: key, pp: '2' }, at = nowIso();
+    store.replaceGroup('Tasks', 'evalId', key, rows.map(function (o, i) {
+      var r = { id: o.id, order: i + 1, name: o.name, product: o.type, qty: has(o.qty) ? o.qty : '', link: o.link || '', code: o.code, unit: o.unit, std: o.std || '', g: o.g || '',
+        workDate: o.workDate, purpose: o.purpose, spName: o.spName, timeStd: o.timeStd, actual: has(o.actual) ? o.actual : '', updatedAt: at };
+      Object.keys(base).forEach(function (k) { r[k] = base[k]; });
+      return r;
+    }));
+    store.replaceGroup('Reviews', 'evalId', key, rows.filter(function (o) { return has(o.H) || o.note; }).map(function (o, i) {
+      var d = str(o.at).split(' '), r = { id: o.id, order: i + 1, name: o.name, product: o.type, qty: has(o.qty) ? o.qty : '', reviewerId: o.by || '', date: d[0] || '', time: d[1] || '',
+        lock: o.locked ? 'Khoá' : '', note: o.note || '', h: has(o.H) ? o.H : '', q: has(o.H) ? o.Q : '', t: has(o.H) ? o.T : '', score: has(o.H) ? r4(o.g * o.H * (1 + o.Q + o.T) / 3) : '' };
+      Object.keys(base).forEach(function (k) { r[k] = base[k]; });
+      return r;
+    }));
+  }
+  function pp2Clean(x, cat) {
+    x = x || {};
+    var c = str(x.code) ? cat[str(x.code)] : null, link = cut(x.link, 500), qty = num(x.qty), act = num(x.actual);
+    var o = { id: cut(x.id, 40) || env.uuid(), name: cut(x.name, 2000).replace(/\s*\n\s*/g, ' '), workDate: DATE.test(str(x.workDate)) ? str(x.workDate) : '',
+      type: c ? cut(c.type, 100) : cut(x.type, 100), purpose: c ? cut(c.purpose, 200) : cut(x.purpose, 200), spName: c ? cut(c.name, 500) : '', code: c ? str(c.id) : '',
+      timeStd: c ? str(c.time) : '', unit: c ? str(c.unit) : '', std: c ? num(c.point) : 0,
+      actual: act > 0 ? r2(Math.min(act, 10000)) : '', qty: qty > 0 ? r2(Math.min(qty, 100000)) : '', link: /^https?:\/\/\S+$/i.test(link) ? link : '' };
+    o.g = c && o.qty ? r4(o.std * o.qty) : 0;
+    return o;
+  }
+  function pp2Perms(me, owner, period) {
+    var ph = phaseOf(period), self = str(me.id) === str(owner.id);
+    return { canEdit: self && on(owner.selfEval) && ph === 'mo', canScore: !self && isBoss(me, owner) && ph !== 'khoa' };
+  }
+  function pp2Out(me, period, owner, rows) {
+    var names = {}; store.all('Users').forEach(function (u) { names[str(u.id)] = str(u.fullName); });
+    rows.forEach(function (o) { if (o.by) o.byName = names[o.by] || o.by; });
+    // Kết quả theo PP1 của cùng người, cùng kỳ: chỉ đọc để đối chiếu, không sao chép dữ liệu.
+    var ev = evalOf(period.id, owner.id), t1 = ev ? loadTasks(ev.id) : [];
+    var pp1 = t1.map(function (t) {
+      var sc = tcalc(t, 's'), m = t.locked ? tcalc(t, 'm') : null, q = num(t.qty) || 1;
+      return { name: t.name, code: t.code || '', product: t.product, qty: q, n: m ? m.n : sc ? sc.n : '', g: r4(q * (m && t.code ? m.base : sc ? sc.point : 0)),
+        p: m ? r4(q * m.point * (1 + num(t.mBonus) / 100)) : null, H: t.code && m ? t.H : null, Q: t.code && m ? t.Q : null, T: t.code && m ? t.T : null, locked: !!t.locked, note: t.note || '' };
+    });
+    var G1 = t1.some(function (t) { return t.locked; }) ? gLocked(t1) : 0, P1 = t1.some(function (t) { return t.locked; }) ? sumLocked(t1) : 0;
+    return { period: periodOut(period), owner: pub(owner), managerName: names[str(owner.managerId)] || '', perms: pp2Perms(me, owner, period), rows: rows, sum: pp2Sum(rows),
+      pp1: { status: ev ? str(ev.status) : '', rows: pp1, G: G1, P: P1, kpi: G1 > 0 ? P1 / G1 : null } };
+  }
+  A.pp2Get = function (me, d) {
+    var period = needPeriod(d.periodId), owner = d.userId ? find('Users', d.userId) : me;
+    if (!owner) err('Không tìm thấy cán bộ.');
+    if (!canView(me, owner)) err('Anh/chị không có quyền xem phiếu này.');
+    return pp2Out(me, period, owner, pp2Load(period, owner.id));
+  };
+  /** Cán bộ lưu kê khai: dòng lãnh đạo đã chấm thì giữ nguyên, các dòng khác lấy theo nội dung gửi lên. */
+  A.pp2Save = function (me, d) {
+    var period = needPeriod(d.periodId);
+    if (!pp2Perms(me, me, period).canEdit) err(phaseOf(period) === 'mo' ? 'Tài khoản này không tự kê công việc.' : 'Kỳ đánh giá đã chốt nhập nên không lưu kê khai được.');
+    var old = {}, cat = catalogMap(), seen = {}, rows = [];
+    pp2Load(period, me.id).forEach(function (o) { old[o.id] = o; });
+    (Array.isArray(d.rows) ? d.rows : []).slice(0, 300).forEach(function (x) {
+      var id = cut((x || {}).id, 40), keep = old[id];
+      if (keep && keep.locked) { if (!seen[id]) { seen[id] = 1; rows.push(keep); } return; }
+      var o = pp2Clean(x, cat);
+      if (!o.name && !o.workDate && !o.type && !o.code && !o.actual && !o.qty) return; // dòng trống
+      if (seen[o.id]) o.id = env.uuid();
+      seen[o.id] = 1;
+      if (keep && keep.note) o.note = keep.note; // nhận xét khi lãnh đạo trả lại
+      rows.push(o);
+    });
+    Object.keys(old).forEach(function (id) { if (old[id].locked && !seen[id]) rows.push(old[id]); }); // không xoá được dòng đã chấm
+    pp2Write(period, me, rows);
+    return pp2Out(me, period, me, pp2Load(period, me.id));
+  };
+  /** Lãnh đạo trực tiếp chấm H, Q, T từng dòng; mode 'open' = bỏ chấm để cán bộ sửa lại. */
+  A.pp2Score = function (me, d) {
+    var period = needPeriod(d.periodId), owner = find('Users', d.userId) || err('Không tìm thấy cán bộ.');
+    if (!pp2Perms(me, owner, period).canScore) err(phaseOf(period) === 'khoa' ? 'Kỳ đánh giá đã khoá.' : 'Chỉ người phụ trách trực tiếp hoặc quản lý vượt cấp mới chấm được cho cán bộ này.');
+    var rows = pp2Load(period, owner.id), by = {}, at = stamp(), n = 0;
+    rows.forEach(function (o) { by[o.id] = o; });
+    (Array.isArray(d.items) ? d.items : []).slice(0, 300).forEach(function (x) {
+      var o = by[str((x || {}).id)];
+      if (!o) return;
+      var label = '“' + o.name.slice(0, 50) + (o.name.length > 50 ? '…' : '') + '”', note = cut(x.note, 1000);
+      if (d.mode === 'open') {
+        if (!note) err('Hãy ghi nhận xét cho dòng ' + label + ' để cán bộ biết cần sửa gì.');
+        delete o.H; delete o.Q; delete o.T; delete o.locked; delete o.p; o.note = note; o.by = str(me.id); o.at = at.date + ' ' + at.time; n++; return;
+      }
+      var miss = pp2Missing(o);
+      if (miss.length) err('Dòng ' + label + ' còn thiếu ' + miss.join(', ') + ' nên chưa chấm được.');
+      if (!has(x.h) || !has(x.q) || !has(x.t)) err('Dòng ' + label + ' chưa chọn đủ H, Q, T.');
+      var H = coef('H', x.h), Q = coef('Q', x.q), T = coef('T', x.t);
+      if (Q === 0) H = 0; // sản phẩm không sử dụng được thì không ghi nhận khối lượng
+      if ((H < 1 || Q < 1 || T < 1) && !note) err('Dòng ' + label + ' bị giảm điểm: hãy ghi rõ lý do ở ô nhận xét để cán bộ được biết.');
+      o.H = H; o.Q = Q; o.T = T; o.note = note; o.locked = true; o.by = str(me.id); o.at = at.date + ' ' + at.time; n++;
+    });
+    if (!n) err('Chưa chọn dòng nào.');
+    pp2Write(period, owner, rows);
+    return pp2Out(me, period, owner, pp2Load(period, owner.id));
+  };
+  /** Danh sách người mình đánh giá theo PP2 (quản trị: toàn bộ người tự kê), kèm tình trạng và KPI. Đọc hai trang tính một lần. */
+  A.pp2List = function (me, d) {
+    var period = needPeriod(d.periodId), pre = 'PP2|' + str(period.id) + '|', tk = {}, rv = {}, admin = on(me.isAdmin);
+    store.all('Reviews').forEach(function (r) { if (str(r.evalId).indexOf(pre) === 0) rv[str(r.evalId) + '#' + str(r.id)] = r; });
+    store.all('Tasks').forEach(function (r) { var e = str(r.evalId); if (e.indexOf(pre) === 0) (tk[e] || (tk[e] = [])).push(r); });
+    var out = store.all('Users').filter(function (u) { return on(u.active) && on(u.selfEval) && str(u.id) !== str(me.id) && (admin || isBoss(me, u)); }).map(function (u) {
+      var key = pre + str(u.id), rows = (tk[key] || []).slice().sort(function (a, b) { return num(a.order) - num(b.order); }).map(function (r) { return pp2Row(r, rv[key + '#' + str(r.id)]); }), sm = pp2Sum(rows);
+      return { user: pub(u), rows: sm.rows, done: sm.done, lack: sm.lack, wait: sm.wait, G: sm.G, P: sm.P, kpi: sm.kpi, a: sm.a, b: sm.b, c: sm.c, status: sm.status, canScore: isBoss(me, u) };
+    });
+    return { period: periodOut(period), rows: out };
+  };
+  /** Nạp dòng PP2 cho một người (chạy tay từ trình soạn Apps Script để chuyển số liệu từ bảng tính sang). Bỏ qua dòng đã có cùng nội dung và ngày. */
+  function pp2Import(userId, periodId, items, reviewerId) {
+    var period = needPeriod(periodId), owner = find('Users', userId) || err('Không tìm thấy người dùng ' + userId + '.');
+    var rows = pp2Load(period, owner.id), cat = catalogMap(), at = stamp(), added = 0;
+    (items || []).forEach(function (x) {
+      var o = pp2Clean(x, cat);
+      if (rows.some(function (r) { return r.name === o.name && r.workDate === o.workDate; })) return;
+      if (has(x.h)) { o.H = coef('H', x.h); o.Q = coef('Q', x.q); o.T = coef('T', x.t); o.note = cut(x.note, 1000); o.locked = true; o.by = str(reviewerId || owner.managerId); o.at = at.date + ' ' + at.time; }
+      rows.push(o); added++;
+    });
+    pp2Write(period, owner, rows);
+    var sm = pp2Sum(pp2Load(period, owner.id));
+    return str(owner.fullName) + ' – ' + str(period.name) + ': thêm ' + added + ' dòng; ' + sm.status + (sm.ready ? ' a=' + r4(sm.a) + ' b=' + r4(sm.b) + ' c=' + r4(sm.c) + ' KPI=' + r4(sm.kpi) : '');
+  }
+
   /* ---------- Danh mục sản phẩm chuẩn (thí điểm KPI) ----------
    * Cán bộ chọn loại sản phẩm, chọn mã, nhập số lượng; điểm giao chuẩn = điểm chuẩn của mã × số lượng. Chỉ quản trị sửa danh mục. */
   function catOut(r) {
@@ -2019,5 +2191,5 @@ function KPI_createCore(store, env) {
       cube: out, detail: detail.slice(-1000).reverse() };
   };
 
-  return { handle: handle, seed: seed, importEvals: importEvals, migrateEval: migrateEval, resetAllPasswords: resetAllPasswords, importLibrary: importLibrary, importCatalog: importCatalog };
+  return { handle: handle, pp2Import: pp2Import, seed: seed, importEvals: importEvals, migrateEval: migrateEval, resetAllPasswords: resetAllPasswords, importLibrary: importLibrary, importCatalog: importCatalog };
 }

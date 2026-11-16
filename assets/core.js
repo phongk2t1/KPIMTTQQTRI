@@ -651,6 +651,43 @@ function KPI_createCore(store, env) {
     return function (u) { return calc(u, {}); };
   }
 
+  /* ---------- PP2 theo cây phụ trách (giống PP1) ----------
+   * Kết quả PP2 của một người = các việc tự thực hiện đã được chấm + kết quả của mọi người ở cây dưới.
+   * Cộng dồn điểm chuẩn G, G·H, G·H·Q, G·H·T và điểm thực đạt P rồi mới tính a, b, c, KPI trên tổng. */
+  var P2_KEYS = ['G', 'GH', 'GHQ', 'GHT', 'P', 'n', 'done'];
+  function p2Zero() { return { G: 0, GH: 0, GHQ: 0, GHT: 0, P: 0, n: 0, done: 0 }; }
+  function p2Plus(a, b) { P2_KEYS.forEach(function (k) { a[k] += b[k]; }); return a; }
+  function p2Round(a) { var o = {}; P2_KEYS.forEach(function (k) { o[k] = Math.round(a[k] * 1e4) / 1e4; }); return o; }
+  function p2OwnOf(tasks) {
+    var r = p2Zero(), ru = rule();
+    tasks.forEach(function (t) {
+      r.n++;
+      var q = num(t.qty) || 0, sv = KPI_taskCalc(t, 's', ru), m = KPI_taskCalc(t, 'm', ru);
+      if (!t.locked || !m) return;
+      var g = Math.round((t.code ? m.base : sv ? sv.point : 0) * q * 1e4) / 1e4, p = Math.round(m.point * q * (1 + (num(t.mBonus) || 0) / 100) * 1e4) / 1e4;
+      r.G += g; r.P += p;
+      if (t.code) { r.GH += g * num(t.H); r.GHQ += g * num(t.H) * num(t.Q); r.GHT += g * num(t.H) * num(t.T); }
+      else { r.GH += p; r.GHQ += p; r.GHT += p; }
+      r.done++;
+    });
+    return r;
+  }
+  function p2Calculator(periodId, map) {
+    var evs = {}, memo = {};
+    store.all('Evaluations').forEach(function (e) { if (str(e.periodId) === str(periodId)) evs[str(e.userId)] = e; });
+    function calc(u, path) {
+      var id = str(u.id);
+      if (memo[id]) return memo[id];
+      if (path[id]) return { own: p2Zero(), total: p2Zero(), people: 0 };
+      path[id] = true;
+      var own = on(u.selfEval) && evs[id] ? p2OwnOf(loadTasks(evs[id].id)) : p2Zero(), total = p2Plus(p2Zero(), own), people = 0;
+      (map[id] || []).forEach(function (c) { var x = calc(c, path); p2Plus(total, x.total); people += x.people + 1; });
+      delete path[id];
+      return (memo[id] = { own: p2Round(own), total: p2Round(total), people: people });
+    }
+    return function (u) { return calc(u, {}); };
+  }
+
   /* ---------- Các thao tác ---------- */
   var A = {};
 
@@ -718,7 +755,7 @@ function KPI_createCore(store, env) {
     var users = store.all('Users').filter(function (u) { return on(u.active) && (!scope || scope[str(u.id)] || str(u.id) === str(me.id)); });
     var evs = {};
     store.all('Evaluations').forEach(function (e) { evs[str(e.periodId) + '|' + str(e.userId)] = e; });
-    var kpi = kpiCalculator(period.id, map);
+    var kpi = kpiCalculator(period.id, map), pc2 = d.p2 ? p2Calculator(period.id, map) : null;
     var rows = users.map(function (u) {
       var ev = evs[str(period.id) + '|' + str(u.id)];
       var o = evOut(ev, u), p = perms(me, ev, u, period), k = kpi(u);
@@ -727,7 +764,7 @@ function KPI_createCore(store, env) {
         finalTotal: o.finalTotal, rating: o.status === 'da_chot' ? o.rating : '', submittedAt: o.submittedAt, canReview: p.canReview, fb: ev ? num(ev.fbCount) : 0, gTotal: o.gTotal, hours: o.hours,
         kpi: k.kpi, people: k.people, done: k.done, reports: (map[str(u.id)] || []).length
       };
-    });
+    }).map(function (r, i) { if (pc2) r.p2 = pc2(users[i]); return r; });
     var trend = store.all('Periods').slice().sort(function (a, b) { return str(a.startDate).localeCompare(str(b.startDate)); })
       .map(function (p) { var k = kpiCalculator(p.id, map)(me); return { periodId: str(p.id), name: str(p.name), avg: k.done || k.kpi > 0 ? k.kpi : null, count: k.done }; });
     return { rows: rows, trend: trend };
@@ -780,18 +817,19 @@ function KPI_createCore(store, env) {
     out.result = rated && KPI_RATE[str(rated.result)] ? KPI_RATE[str(rated.result)] : '';
     // Kết quả của một người trong cây đánh giá = việc tự thực hiện đã được công nhận + kết quả của những người mình phụ trách.
     // Trả kèm danh sách cấp dưới trực tiếp để hiện ngay trên phiếu của người đó.
-    var map = reportsMap(), kc = kpiCalculator(period.id, map), evs = {};
+    var map = reportsMap(), kc = kpiCalculator(period.id, map), pc = p2Calculator(period.id, map), evs = {};
     store.all('Evaluations').forEach(function (e) { if (str(e.periodId) === str(period.id)) evs[str(e.userId)] = e; });
     out.team = (map[str(owner.id)] || []).slice().sort(function (a, b) { return rank(a) - rank(b) || str(a.fullName).localeCompare(str(b.fullName), 'vi'); })
       .map(function (u) {
         var e = evs[str(u.id)], k = kc(u);
         return {
           user: pub(u), status: e ? str(e.status) : (on(u.selfEval) ? 'chua_lap' : 'khong_ke'), taskCount: e ? num(e.taskCount) : 0,
-          finalTotal: e && e.status === 'da_chot' ? num(e.finalTotal) : null, mgrTotal: e && has(e.mgrTotal) ? num(e.mgrTotal) : null, kpi: k.kpi, people: k.people, done: k.done, reports: (map[str(u.id)] || []).length
+          finalTotal: e && e.status === 'da_chot' ? num(e.finalTotal) : null, mgrTotal: e && has(e.mgrTotal) ? num(e.mgrTotal) : null, kpi: k.kpi, people: k.people, done: k.done, reports: (map[str(u.id)] || []).length, p2: pc(u)
         };
       });
     var ko = kc(owner);
     out.kpi = { own: ev && has(ev.mgrTotal) ? num(ev.mgrTotal) : 0, total: ko.kpi, people: ko.people, done: ko.done };
+    out.p2 = pc(owner);
     if (str(me.id) === str(owner.id) && on(owner.selfEval)) {
       var mine = store.all('Evaluations').filter(function (e) { return str(e.userId) === str(owner.id) && num(e.taskCount) > 0; });
       var byPeriod = {};

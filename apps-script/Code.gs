@@ -337,6 +337,15 @@ function importPP2Hieu() {
   } finally { lock.releaseLock(); }
 }
 
+/** Chạy tay MỘT LẦN: đưa các dòng PP2 đã lưu riêng về chung phiếu với PP1 (PP1 và PP2 dùng chung một bộ dữ liệu). */
+function migratePP2() {
+  var lock = LockService.getScriptLock(); lock.waitLock(28000);
+  try {
+    var core = KPI_createCore(makeSheetStore_(getSpreadsheet_()), makeEnv_());
+    core.pp2Migrate().forEach(function (line) { Logger.log(line); });
+  } finally { lock.releaseLock(); }
+}
+
 /** Tạo các trang tính còn thiếu, kèm dòng tiêu đề tiếng Việt. */
 function ensureSheets_(ss) {
   Object.keys(KPI_TABLES).forEach(function (t) {

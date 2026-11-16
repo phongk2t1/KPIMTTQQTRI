@@ -376,3 +376,25 @@ table.p2t { min-width: 1700px; font-size: 14px; border-collapse: separate; borde
   .p2t tbody td.c-tt { font-weight: 800; color: var(--pri-d); } .p2t tbody td.c-tt::before { display: inline; content: "Dòng "; text-transform: none; font-size: 13px; color: var(--pri-d); }
   .p2t tbody td.auto { background: #f3fbf9 !important; border-radius: 10px; padding: 6px 8px; } .p2t input[type=number] { width: 100%; }
 }
+
+/* Bảng phiếu trình bày theo PP2 (cùng dữ liệu với PP1) */
+table.sheet.pp2mode { min-width: 1900px; }
+.sheet.pp2mode thead th { top: 0; background: #dbeafe; color: #1e3a8a; }
+.sheet.pp2mode thead th.auto { background: #d5f5ee; color: #0b5e4a; } .sheet.pp2mode thead th.hq { background: #ede9fe; color: #4c1d95; }
+.sheet.pp2mode thead th .hint { font-weight: 500; font-style: italic; opacity: .8; }
+.sheet.pp2mode td.auto { background: #f3fbf9; } .sheet.pp2mode td.hq { background: #faf8ff; min-width: 150px; } .sheet.pp2mode td.c-sp { min-width: 220px; }
+.sheet.pp2mode td.hq label { display: block; font-weight: 700; font-size: 12px; } .sheet.pp2mode td.hq select { width: 100%; max-width: none; }
+.sheet.pp2mode td.c-note div.tx.mg.hq { display: none; } /* H, Q, T đã có cột riêng */
+.sheet .p2lv { display: inline-flex; flex-wrap: wrap; gap: 4px 8px; vertical-align: middle; } .sheet .p2lv label { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; font-size: 12px; }
+.sheet .p2lv select { width: 52px; padding: 3px 4px; }
+.sheet.pp2mode input[type=date] { width: 140px; padding: 6px; font-size: 13px; }
+@media (max-width: 860px) {
+  table.sheet.pp2mode { min-width: 0; }
+  .sheet.pp2mode tbody tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sheet.pp2mode tbody td:nth-child(n) { grid-column: auto; }
+  .sheet.pp2mode tbody td:nth-child(n)::before { content: attr(data-l); display: block; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 2px; }
+  .sheet.pp2mode tbody td.c-tt, .sheet.pp2mode tbody td.c-name, .sheet.pp2mode tbody td.c-sp, .sheet.pp2mode tbody td.hq, .sheet.pp2mode tbody td.c-note, .sheet.pp2mode tbody td.no-print { grid-column: 1 / -1; }
+  .sheet.pp2mode tbody td.c-tt::before { display: inline; content: "Công việc "; text-transform: none; font-size: 13px; color: var(--pri-d); }
+  .sheet.pp2mode tbody td.auto { background: #f3fbf9 !important; border-radius: 10px; padding: 6px 8px; }
+  .sheet.pp2mode input[type=date], .sheet.pp2mode input[type=number] { width: 100%; }
+}

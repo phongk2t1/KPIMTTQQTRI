@@ -344,8 +344,18 @@ ul.tree > li { border-left-color: var(--pri); }
 .sheet details.tx select, .sheet details.tx input { width: 100%; }
 
 /* Nhóm menu và trang ĐÁNH GIÁ KPI PP2 */
-.side .navgrp { margin: 12px 8px 4px; font-size: 11px; font-weight: 800; letter-spacing: .06em; color: rgba(255, 255, 255, .62); }
-.side a.nav.sub { margin-left: 8px; }
+.side { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.side > * { flex: none; }
+.side .navgrp { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; margin: 6px 0 0; padding: 9px 12px; border: 0; border-radius: 10px; background: rgba(255, 255, 255, .06);
+  color: #e6edff; font: inherit; font-size: 12px; font-weight: 800; letter-spacing: .05em; text-align: left; cursor: pointer; }
+.side .navgrp:hover { background: rgba(255, 255, 255, .12); }
+.side .navgrp i { flex: none; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform .15s; margin-right: 2px; }
+.side .navgrp.open i { transform: rotate(45deg); }
+.side .navsub { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 2px 10px; padding-left: 8px; border-left: 2px solid rgba(255, 255, 255, .16); }
+.side .navsub[hidden] { display: none; }
+.side a.nav.sub { margin-left: 0; }
+/* Khối tên người dùng và nút Đăng xuất luôn nằm trong nền tối, dính đáy thanh bên, không bị che */
+.side .who { position: sticky; bottom: -18px; margin: auto -12px -18px; padding: 12px 20px 18px; background: #101c44; z-index: 2; }
 .p2w { border: 1px solid var(--line); border-radius: 12px; }
 table.p2t { min-width: 1700px; font-size: 14px; border-collapse: separate; border-spacing: 0; }
 .p2t th, .p2t td { border-right: 1px solid var(--line); padding: 6px 8px; vertical-align: top; }

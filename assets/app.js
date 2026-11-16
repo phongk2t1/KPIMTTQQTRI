@@ -1449,8 +1449,10 @@
    * Kê khai theo ngày và chấm H – Q – T đúng cách làm của bảng tính "Hệ thống kê khai và đánh giá KPI":
    * cán bộ nhập nội dung, ngày, chọn Loại → Mục đích → Tên sản phẩm, giờ thực tế, số lượng; mã, thời gian chuẩn, đơn vị, điểm chuẩn tự nhảy;
    * lãnh đạo chọn ba hệ số; điểm thực đạt = điểm chuẩn × H × (1 + Q + T) / 3; KPI = trung bình của a, b, c và chỉ hiện khi mọi dòng đã đủ. */
-  var P2 = { d: null, rows: [], list: null };
-  function p2Set(d) { P2.d = d; P2.rows = JSON.parse(JSON.stringify(d.rows || [])); P2.rows.forEach(function (r) { r.h0 = r.H; r.q0 = r.Q; r.t0 = r.T; r.n0 = r.note || ''; }); }
+  var P2 = { d: null, rows: [], list: null, sel: {} };
+  function p2Set(d) { P2.d = d; P2.rows = JSON.parse(JSON.stringify(d.rows || [])); P2.rows.forEach(function (r) { r.h0 = r.H; r.q0 = r.Q; r.t0 = r.T; r.n0 = r.note || ''; }); P2.sel = {};
+    // Người chấm: gài sẵn H = Q = T = 1 cho các dòng đã kê đủ mà chưa chấm; chỉ phải đổi dòng có sai sót hoặc chậm.
+    if (d.perms.canScore) P2.rows.forEach(function (r) { if (r.src !== 'pp1' && !r.locked && !p2Missing(r).length && (r.H === '' || r.H == null)) { r.H = 1; r.Q = 1; r.T = 1; } }); }
   function p2Cat() { return (S.cat || []).filter(function (c) { return c.active; }); }
   function p2Pct(v) { return v == null ? '' : (v * 100).toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'; }
   function p2G(r) { return r.src === 'pp1' ? Number(r.g) || 0 : r.code && Number(r.qty) > 0 ? Math.round(Number(r.std) * Number(r.qty) * 1e4) / 1e4 : 0; }
@@ -1493,19 +1495,20 @@
       KPI_HQT[k].map(function (o) { return '<option value="' + o[0] + '"' + (cur !== '' && cur != null && Number(cur) === o[0] ? ' selected' : '') + '>' + fmt(o[0]) + ' · ' + h(o[1]) + '</option>'; }).join('') + '</select>';
   }
   function p2RowHtml(r, ri) {
-    var d = P2.d, old = r.src === 'pp1', edit = d.perms.canEdit && !r.locked && !old, mgr = d.perms.canScore, cat = p2Cat(), g = p2G(r), p = p2P(r), miss = p2Missing(r);
+    var d = P2.d, old = r.src === 'pp1', edit = (d.perms.canEdit && !r.locked && !old) || (d.perms.canScore && !!r.isNew), mgr = d.perms.canScore, cat = p2Cat(), g = p2G(r), p = p2P(r), miss = p2Missing(r);
     var pp1Link = '#/' + (d.owner.id === S.user.id ? 'tudanhgia' : 'phieu/' + encodeURIComponent(d.owner.id));
     var types = [], seenT = {}; cat.forEach(function (c) { if (!seenT[c.type]) { seenT[c.type] = 1; types.push(c.type); } });
     var purposes = [], seenP = {}; cat.forEach(function (c) { if (c.type === r.type && !seenP[c.purpose]) { seenP[c.purpose] = 1; purposes.push(c.purpose); } });
     var prods = cat.filter(function (c) { return c.type === r.type && c.purpose === r.purpose; });
     var cur = r.code ? (S.cat || []).filter(function (c) { return c.id === r.code; })[0] : null;
     var td = function (label, cls, inner) { return '<td data-l="' + label + '"' + (cls ? ' class="' + cls + '"' : '') + '>' + inner + '</td>'; };
-    var tags = (old ? '<a class="badge b-purple no-print" href="' + pp1Link + '" title="Việc này kê ở phiếu PP1; sửa và chấm tại phiếu PP1">Kê ở phiếu PP1 ›</a>' : '') + (r.locked ? '<span class="badge b-green">🔒 Đã chấm' + (r.at ? ' ' + h(String(r.at).slice(0, 5)) : '') + (r.byName ? ' · ' + h(r.byName) : '') + '</span>' : miss.length ? '<span class="badge b-amber">Thiếu: ' + h(miss.join(', ')) + '</span>' : '<span class="badge b-blue">Đủ, chờ chấm</span>');
+    var tags = (r.isNew ? '<span class="badge b-amber">Việc mới, chưa giao</span>' : '') + (r.asg ? '<span class="badge b-purple">Lãnh đạo giao</span>' : '') + (r.deadline ? '<span class="badge b-gray">Hạn ' + h(fdate(r.deadline)) + '</span>' : '') + (old ? '<a class="badge b-purple no-print" href="' + pp1Link + '" title="Việc này kê ở phiếu PP1; sửa và chấm tại phiếu PP1">Kê ở phiếu PP1 ›</a>' : '') + (r.locked ? '<span class="badge b-green">🔒 Đã chấm' + (r.at ? ' ' + h(String(r.at).slice(0, 5)) : '') + (r.byName ? ' · ' + h(r.byName) : '') + '</span>' : miss.length ? '<span class="badge b-amber">Thiếu: ' + h(miss.join(', ')) + '</span>' : '<span class="badge b-blue">Đủ, chờ chấm</span>');
     return '<tr data-p2row="' + ri + '"' + (r.locked ? ' class="locked"' : '') + '>' +
-      td('TT', 'c-tt center', String(ri + 1)) +
+      td('TT', 'c-tt center', (mgr && !old ? '<label class="pick1"><input type="checkbox" data-p2sel="' + ri + '"' + (P2.sel[ri] ? ' checked' : '') + ' aria-label="Chọn dòng ' + (ri + 1) + '"><span>' + (ri + 1) + '</span></label>' : String(ri + 1))) +
       td('Nội dung công việc', 'c-name', (edit ? '<textarea rows="3" data-p2f="name" data-r="' + ri + '" placeholder="Ghi rõ việc đã làm, ví dụ: Tham mưu công văn góp ý dự thảo kế hoạch…">' + h(r.name || '') + '</textarea>' +
         '<div class="flow no-print"><button type="button" class="btn sm" data-act="p2Sug" data-r="' + ri + '">Gợi ý mã từ nội dung</button><input type="url" data-p2f="link" data-r="' + ri + '" value="' + h(r.link || '') + '" placeholder="Đường dẫn minh chứng (không bắt buộc)" style="flex:1 1 160px"></div>'
         : '<div class="tname">' + h(r.name) + '</div>' + (r.link ? '<a class="small" href="' + h(r.link) + '" target="_blank" rel="noopener">Minh chứng</a>' : '')) +
+        (mgr && r.isNew ? '<div class="flow no-print"><label class="small">Hạn hoàn thành <input type="date" data-p2f="deadline" data-r="' + ri + '" value="' + h(r.deadline || '') + '"></label></div>' : '') +
         '<div class="tags">' + tags + '</div>' + (!mgr && r.note ? '<div class="mnote"><b>Nhận xét của lãnh đạo:</b> ' + h(r.note) + '</div>' : '')) +
       td('Ngày thực hiện', '', edit ? '<input type="date" data-p2f="workDate" data-r="' + ri + '" value="' + h(r.workDate || '') + '" min="' + h(d.period.startDate || '') + '" max="' + h(d.period.endDate || '') + '">' : h(fdate(r.workDate))) +
       td('Loại sản phẩm', '', edit ? '<select data-p2c="type" data-r="' + ri + '"><option value="">– chọn –</option>' + opts(types.map(function (x) { return [x, x]; }), r.type) + '</select>' : h(r.type)) +
@@ -1520,12 +1523,14 @@
         td('H – hoàn thành', 'hq', p2HqtSel(r, ri, 'H', mgr && !old)) + td('Q – chất lượng', 'hq', p2HqtSel(r, ri, 'Q', mgr && !old)) + td('T – tiến độ', 'hq', p2HqtSel(r, ri, 'T', mgr && !old))) +
       td('Điểm thực đạt', 'auto num', '<b data-p2p="' + ri + '">' + (p == null ? '' : f4(p)) + '</b>') +
       (mgr ? td('Nhận xét, lý do', 'c-note', old ? (r.note ? h(r.note) : '') + '<div class="no-print"><a class="small" href="' + pp1Link + '">Mở phiếu PP1 để chấm việc này</a></div>' : '<textarea rows="2" data-p2f="note" data-r="' + ri + '" placeholder="Bắt buộc khi H, Q hoặc T dưới 1">' + h(r.note || '') + '</textarea>' +
-        (r.locked ? '<div class="flow no-print"><button type="button" class="btn sm warn" data-act="p2Open" data-r="' + ri + '">Bỏ chấm, trả lại để sửa</button></div>' : '')) : '') +
+        '<div class="flow no-print">' + (r.isNew ? '<button type="button" class="btn sm danger" data-act="p2Del" data-r="' + ri + '">Bỏ dòng</button>' :
+          '<button type="button" class="btn sm ok" data-act="p2ScoreOne" data-r="' + ri + '">' + (r.locked ? 'Lưu sửa điểm' : 'Chấm điểm') + '</button>' +
+          (r.locked ? '<button type="button" class="btn sm warn" data-act="p2Open" data-r="' + ri + '">Bỏ chấm, trả lại</button>' : r.asg === S.user.id ? '<button type="button" class="btn sm danger" data-act="p2Drop" data-r="' + ri + '">Rút việc</button>' : '')) + '</div>') : '') +
       (d.perms.canEdit ? td('', 'no-print center', old ? '<a class="btn sm" href="' + pp1Link + '">Sửa ở PP1</a>' : edit ? '<button type="button" class="btn sm danger" data-act="p2Del" data-r="' + ri + '">Xoá</button>' : '') : '') + '</tr>';
   }
   function p2TableHtml() {
     var d = P2.d, mgr = d.perms.canScore;
-    return '<div class="tbl-wrap p2w"><table class="tbl p2t"><thead><tr><th>TT</th><th>Nội dung công việc<div class="hint">cán bộ nhập</div></th><th>Ngày thực hiện</th><th>Loại sản phẩm</th><th>Mục đích</th><th>Tên sản phẩm</th>' +
+    return '<div class="tbl-wrap p2w"><table class="tbl p2t"><thead><tr><th>' + (mgr ? '<label class="pick1"><input type="checkbox" id="p2SelAll" aria-label="Chọn tất cả các dòng"><span>TT</span></label>' : 'TT') + '</th><th>Nội dung công việc<div class="hint">cán bộ nhập</div></th><th>Ngày thực hiện</th><th>Loại sản phẩm</th><th>Mục đích</th><th>Tên sản phẩm</th>' +
       '<th class="auto">Mã<div class="hint">tự nhảy</div></th><th class="auto">Thời gian chuẩn</th><th>Giờ thực tế<div class="hint">chỉ nhập số giờ</div></th><th>Số lượng</th><th class="auto">Đơn vị tính</th><th class="auto">Điểm chuẩn</th>' +
       '<th class="hq">Hệ số hoàn thành<div class="hint">lãnh đạo chọn</div></th><th class="hq">Hệ số chất lượng</th><th class="hq">Hệ số tiến độ</th><th class="auto">Điểm thực đạt</th>' + (mgr ? '<th class="hq">Nhận xét, lý do</th>' : '') + (d.perms.canEdit ? '<th class="no-print"></th>' : '') + '</tr></thead><tbody>' +
       (P2.rows.map(p2RowHtml).join('') || '<tr><td colspan="18" class="muted center">Chưa có dòng kê khai nào.</td></tr>') + '</tbody></table></div>';
@@ -1553,7 +1558,7 @@
   }
   function p2Html() {
     var d = P2.d, o = d.owner, mine = o.id === S.user.id, p = d.perms;
-    var banner = p.canEdit ? '' : p.canScore ? '<div class="banner blue">Anh/chị là người chấm: chọn H, Q, T cho từng dòng đã kê đủ rồi bấm “Lưu chấm điểm”. Hệ số dưới 1 phải ghi lý do.</div>' :
+    var banner = p.canEdit ? '' : p.canScore ? '<div class="banner blue">Anh/chị là người chấm. Các dòng đã kê đủ được gài sẵn H = Q = T = 1; chỉ đổi dòng có sai sót hoặc chậm (hệ số dưới 1 phải ghi lý do). Tích đầu dòng rồi bấm “Xác nhận, chấm điểm các việc đã chọn”, hoặc bấm “Chấm điểm” ở cuối từng dòng. Dòng đã chấm vẫn sửa được.</div>' :
       mine ? '<div class="banner amber">Kỳ này đã chốt nhập hoặc tài khoản không tự kê, nên chỉ xem được.</div>' : '';
     return (mine ? '' : '<p class="no-print"><a href="#/pp2duyet">‹ Quay lại danh sách</a></p>') +
       '<div class="card"><h2>' + h(o.fullName) + '</h2><div class="muted">' + h(o.title || '') + ' · ' + h(unitName(o.unitId)) + ' · ' + h(d.period.name) + '</div>' +
@@ -1562,7 +1567,8 @@
         '<li>Nhập <b>giờ thực tế</b> (chỉ số giờ, ví dụ 0,5 hoặc 2) và <b>số lượng</b>.</li><li>Bấm <b>Lưu kê khai</b>. Lãnh đạo trực tiếp sẽ chấm H, Q, T; dòng đã chấm bị khoá.</li></ol></details>' : '') +
       p2KpiHtml() + '<div class="card"><h2>Bảng kê khai' + (p.canScore ? ' và chấm H – Q – T' : '') + '</h2><div id="p2Box">' + p2TableHtml() + '</div>' +
       '<div class="actions no-print" style="margin-top:12px">' + (p.canEdit ? '<button class="btn" data-act="p2Add">＋ Thêm dòng</button><button class="btn primary" data-act="p2Save">Lưu kê khai</button>' : '') +
-      (p.canScore ? '<button class="btn" data-act="p2Fill">Điền 1 – 1 – 1 cho các dòng đủ, chưa chấm</button><button class="btn ok" data-act="p2Score">Lưu chấm điểm</button>' : '') + '</div>' +
+      (p.canScore ? '<button class="btn ok" data-act="p2Score">Xác nhận, chấm điểm các việc đã chọn</button><button class="btn primary" data-act="p2Assign">Giao việc mới (chưa chấm)</button>' +
+        '<button class="btn warn" data-act="p2OpenSel">Gửi nhận xét, cho sửa lại</button><button class="btn" data-act="p2AddM">＋ Thêm việc giao cho cán bộ</button>' : '') + '</div>' +
       (P2.rows.some(function (r) { return r.src === 'pp1'; }) ? '<p class="muted small" style="margin:10px 0 0">Các dòng có nhãn “Kê ở phiếu PP1” là công việc đã kê theo PP1 trong cùng kỳ, được tính chung vào bảng này. Muốn sửa hoặc chấm các dòng đó thì mở phiếu PP1.</p>' : '') + '</div>';
   }
   function p2Redraw() { var b = document.getElementById('p2Box'); if (b) b.innerHTML = p2TableHtml(); }
@@ -1593,12 +1599,15 @@
   document.addEventListener('change', function (ev) {
     var el = ev.target;
     if (!P2.d || !el.dataset) return;
+    if (el.id === 'p2SelAll') { P2.rows.forEach(function (x, i) { if (x.src !== 'pp1') P2.sel[i] = el.checked; }); document.querySelectorAll('input[data-p2sel]').forEach(function (c) { c.checked = el.checked; }); return; }
+    if (el.dataset.p2sel !== undefined) { P2.sel[+el.dataset.p2sel] = el.checked; return; }
     var r = P2.rows[+el.dataset.r]; if (!r) return;
     if (el.dataset.p2c) {
       if (el.dataset.p2c === 'type') { r.type = el.value; r.purpose = ''; p2ApplyCode(r, ''); }
       else if (el.dataset.p2c === 'purpose') { r.purpose = el.value; p2ApplyCode(r, ''); }
       else p2ApplyCode(r, el.value);
       p2Redraw();
+    } else if (el.dataset.p2sel !== undefined) { P2.sel[+el.dataset.p2sel] = el.checked;
     } else if (el.dataset.p2h) {
       r[el.dataset.p2h] = el.value === '' ? '' : Number(el.value);
       if (el.dataset.p2h === 'Q' && r.Q === 0) r.H = 0;
@@ -1879,33 +1888,46 @@
   };
   ACT.p2Go = function (el) { location.hash = '#/pp2phieu/' + encodeURIComponent(el.dataset.u); };
   ACT.p2Fill = function () { var n = 0; P2.rows.forEach(function (r) { if (r.src !== 'pp1' && !r.locked && !p2Missing(r).length && (r.H === '' || r.H == null)) { r.H = 1; r.Q = 1; r.T = 1; n++; } }); p2Redraw(); toast(n ? 'Đã điền 1 – 1 – 1 cho ' + n + ' dòng. Sửa lại dòng nào có sai sót hoặc chậm rồi bấm Lưu chấm điểm.' : 'Không có dòng nào đủ điều kiện để điền.'); };
-  ACT.p2Score = function (el) {
-    var has3 = function (r) { return r.H !== '' && r.H != null && r.Q !== '' && r.Q != null && r.T !== '' && r.T != null; };
-    var items = P2.rows.filter(function (r) { return r.src !== 'pp1' && has3(r) && (!r.locked || r.H !== r.h0 || r.Q !== r.q0 || r.T !== r.t0 || (r.note || '') !== r.n0); });
-    if (!items.length) return toast('Chưa có dòng nào được chọn đủ H, Q, T (hoặc chưa đổi gì so với lần chấm trước).', true);
-    for (var i = 0; i < items.length; i++) { var r = items[i]; if ((r.H < 1 || r.Q < 1 || r.T < 1) && !String(r.note || '').trim()) return toast('Dòng “' + String(r.name).slice(0, 40) + '” bị giảm điểm: hãy ghi lý do ở ô nhận xét.', true); }
+  function p2Reload(d, msg) { p2Set(d); $('#view').innerHTML = p2Html(); toast(msg + ' ' + P2.d.sum.status); }
+  /** Chấm một nhóm dòng: kiểm tra đủ H, Q, T và lý do rồi gửi một lượt. */
+  function p2DoScore(rows, btn) {
+    rows = rows.filter(function (r) { return r && r.src !== 'pp1' && !r.isNew; });
+    if (!rows.length) return toast('Chưa chọn dòng nào để chấm. Tích ô đầu dòng (hoặc ô TT trên tiêu đề để chọn hết) rồi bấm lại.', true);
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i], label = '“' + String(r.name).slice(0, 40) + '”', miss = p2Missing(r);
+      if (miss.length) return toast('Dòng ' + label + ' còn thiếu ' + miss.join(', ') + ' nên chưa chấm được. Bỏ tích dòng này hoặc nhắc cán bộ kê đủ.', true);
+      if (r.H === '' || r.H == null || r.Q === '' || r.Q == null || r.T === '' || r.T == null) return toast('Dòng ' + label + ' chưa chọn đủ H, Q, T.', true);
+      if ((r.H < 1 || r.Q < 1 || r.T < 1) && !String(r.note || '').trim()) return toast('Dòng ' + label + ' bị giảm điểm: hãy ghi lý do ở ô nhận xét.', true);
+    }
+    run(btn, async function () {
+      p2Reload(await api('pp2Score', { periodId: S.periodId, userId: P2.d.owner.id, items: rows.map(function (r) { return { id: r.id, h: r.H, q: r.Q, t: r.T, note: r.note || '' }; }) }), 'Đã chấm điểm ' + rows.length + ' dòng.');
+    });
+  }
+  ACT.p2Score = function (el) { p2DoScore(P2.rows.filter(function (r, i) { return P2.sel[i]; }), el); };
+  ACT.p2ScoreOne = function (el) { p2DoScore([P2.rows[+el.dataset.r]], el); };
+  ACT.p2AddM = function () { P2.rows.push({ id: '', isNew: true, name: '', workDate: '', type: '', purpose: '', code: '', actual: '', qty: 1, std: 0, deadline: '' }); p2Redraw(); var ta = document.querySelectorAll('#p2Box textarea[data-p2f=name]'); if (ta.length) ta[ta.length - 1].focus(); };
+  ACT.p2Assign = function (el) {
+    var items = P2.rows.filter(function (r) { return r.isNew && (String(r.name || '').trim() || r.code); });
+    if (!items.length) return toast('Chưa có việc mới. Bấm “＋ Thêm việc giao cho cán bộ”, ghi nội dung hoặc chọn sản phẩm rồi bấm lại.', true);
     run(el, async function () {
-      p2Set(await api('pp2Score', { periodId: S.periodId, userId: P2.d.owner.id, items: items.map(function (r) { return { id: r.id, h: r.H, q: r.Q, t: r.T, note: r.note || '' }; }) }));
-      $('#view').innerHTML = p2Html();
-      toast('Đã lưu chấm điểm ' + items.length + ' dòng. ' + P2.d.sum.status);
+      p2Reload(await api('pp2Assign', { periodId: S.periodId, userId: P2.d.owner.id, items: items.map(function (r) { return { name: r.name, workDate: r.workDate, type: r.type, purpose: r.purpose, code: r.code, actual: r.actual, qty: r.qty, deadline: r.deadline }; }) }), 'Đã giao ' + items.length + ' việc.');
     });
   };
-  ACT.p2Open = function (el) {
+  ACT.p2Drop = function (el) {
     var r = P2.rows[+el.dataset.r];
-    if (!String(r.note || '').trim()) return toast('Ghi nhận xét cho dòng này để cán bộ biết cần sửa gì, rồi bấm lại.', true);
-    run(el, async function () {
-      p2Set(await api('pp2Score', { periodId: S.periodId, userId: P2.d.owner.id, mode: 'open', items: [{ id: r.id, note: r.note }] }));
-      $('#view').innerHTML = p2Html();
-      toast('Đã bỏ chấm và trả lại dòng này cho cán bộ sửa.');
+    if (!confirm('Rút việc này khỏi phiếu của cán bộ?')) return;
+    run(el, async function () { p2Reload(await api('pp2Score', { periodId: S.periodId, userId: P2.d.owner.id, mode: 'drop', items: [{ id: r.id }] }), 'Đã rút việc.'); });
+  };
+  function p2DoOpen(rows, btn) {
+    rows = rows.filter(function (r) { return r && r.src !== 'pp1' && !r.isNew; });
+    if (!rows.length) return toast('Chưa chọn dòng nào. Tích ô đầu dòng rồi bấm lại.', true);
+    for (var i = 0; i < rows.length; i++) if (!String(rows[i].note || '').trim()) return toast('Dòng “' + String(rows[i].name).slice(0, 40) + '” chưa có nhận xét. Ghi nhận xét để cán bộ biết cần sửa gì.', true);
+    run(btn, async function () {
+      p2Reload(await api('pp2Score', { periodId: S.periodId, userId: P2.d.owner.id, mode: 'open', items: rows.map(function (r) { return { id: r.id, note: r.note }; }) }), 'Đã gửi nhận xét và trả lại ' + rows.length + ' dòng cho cán bộ sửa.');
     });
-  };
-  ACT.navGrp = function (el) {
-    var box = el.nextElementSibling, open = box.hasAttribute('hidden'), st = navOpen();
-    if (open) box.removeAttribute('hidden'); else box.setAttribute('hidden', '');
-    el.classList.toggle('open', open); el.setAttribute('aria-expanded', String(open));
-    st[el.dataset.g] = open ? 1 : 0;
-    try { localStorage.setItem('kpi_nav', JSON.stringify(st)); } catch (e) { /* không lưu được thì chỉ đổi trong phiên này */ }
-  };
+  }
+  ACT.p2OpenSel = function (el) { p2DoOpen(P2.rows.filter(function (r, i) { return P2.sel[i]; }), el); };
+  ACT.p2Open = function (el) { p2DoOpen([P2.rows[+el.dataset.r]], el); };
   ACT.taskOk = function (el) { flowCall(el, 'taskAccept', { ok: 1 }, 'Đã xác nhận nhiệm vụ.'); };
   ACT.taskFb = function (el) {
     var note = prompt('Lý do nhiệm vụ này chưa hợp lý (mỗi nhiệm vụ chỉ phản hồi được một lần):');

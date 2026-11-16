@@ -342,3 +342,27 @@ ul.tree > li { border-left-color: var(--pri); }
 .sheet details.tx > summary { cursor: pointer; }
 .sheet details.tx[open] { display: flex !important; flex-direction: column; align-items: stretch; gap: 6px; }
 .sheet details.tx select, .sheet details.tx input { width: 100%; }
+
+/* Nhóm menu và trang ĐÁNH GIÁ KPI PP2 */
+.side .navgrp { margin: 12px 8px 4px; font-size: 11px; font-weight: 800; letter-spacing: .06em; color: rgba(255, 255, 255, .62); }
+.side a.nav.sub { margin-left: 8px; }
+.p2w { border: 1px solid var(--line); border-radius: 12px; }
+table.p2t { min-width: 1700px; font-size: 14px; border-collapse: separate; border-spacing: 0; }
+.p2t th, .p2t td { border-right: 1px solid var(--line); padding: 6px 8px; vertical-align: top; }
+.p2t thead th { white-space: normal; text-transform: none; letter-spacing: 0; text-align: center; font-size: 12px; line-height: 1.3; background: #dbeafe; color: #1e3a8a; }
+.p2t thead th.auto { background: #d5f5ee; color: #0b5e4a; } .p2t thead th.hq { background: #ede9fe; color: #4c1d95; }
+.p2t thead th .hint { font-weight: 500; font-style: italic; opacity: .8; }
+.p2t td.auto { background: #f3fbf9; } .p2t td.hq { background: #faf8ff; min-width: 170px; } .p2t td.c-name { min-width: 320px; } .p2t td.c-sp { min-width: 240px; } .p2t td.c-note { min-width: 220px; }
+.p2t select, .p2t input[type=date] { width: 100%; padding: 6px; font-size: 13px; min-width: 130px; } .p2t input[type=number] { width: 84px; } .p2t textarea { min-height: 64px; font-size: 14px; }
+.p2t tr.locked td { background: #fafcff; } .p2t .tname { white-space: pre-wrap; } .p2t .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.p2t .flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.p2t .mnote { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: #fff8e8; border: 1px solid #f0d49a; color: #6b4a00; font-size: 13px; white-space: pre-wrap; }
+@media (max-width: 860px) {
+  .p2w { border: 0; overflow: visible; } table.p2t, table.p2t tbody { display: block; min-width: 0; } table.p2t thead { display: none; }
+  table.p2t tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 12px; margin-bottom: 12px; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+  .p2t tbody td { display: block; border: 0; padding: 0; min-width: 0 !important; background: none !important; }
+  .p2t tbody td::before { content: attr(data-l); display: block; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 2px; }
+  .p2t tbody td.c-tt, .p2t tbody td.c-name, .p2t tbody td.c-sp, .p2t tbody td.hq, .p2t tbody td.c-note { grid-column: 1 / -1; }
+  .p2t tbody td.c-tt { font-weight: 800; color: var(--pri-d); } .p2t tbody td.c-tt::before { display: inline; content: "Dòng "; text-transform: none; font-size: 13px; color: var(--pri-d); }
+  .p2t tbody td.auto { background: #f3fbf9 !important; border-radius: 10px; padding: 6px 8px; } .p2t input[type=number] { width: 100%; }
+}

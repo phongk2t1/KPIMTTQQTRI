@@ -443,6 +443,8 @@ function KPI_createCore(store, env) {
     if (DATE.test(str(t.doneDate))) out.doneDate = str(t.doneDate);   // ngày hoàn thành thực tế
     if (has(t.progress)) out.progress = pct(t.progress);              // tiến độ %, để trống coi như đã xong
     if (bonusOf(t.bonus)) out.bonus = bonusOf(t.bonus);               // điểm thưởng cán bộ đề xuất (%)
+    if (DATE.test(str(t.workDate))) out.workDate = str(t.workDate);      // ngày thực hiện (cách kê của PP2, lưu chung một dòng)
+    if (num(t.actual) > 0) out.actual = r2(Math.min(num(t.actual), 10000)); // giờ thực tế
     if (on(t.repeat)) out.repeat = true;                       // việc lặp lại: tự đưa sang kỳ sau
     if (KPI_calc(cleanLevels(t.pm))) out.pm = cleanLevels(t.pm); // mức người phụ trách đã chấm ở kỳ trước
     if (cut(t.from, 60)) out.from = cut(t.from, 60);             // tên kỳ mà việc này được chuyển sang
@@ -480,6 +482,8 @@ function KPI_createCore(store, env) {
       if (str(r.doneDate)) t.doneDate = str(r.doneDate);
       if (str(r.progress) !== '') t.progress = pct(r.progress);
       if (bonusOf(r.bonus)) t.bonus = bonusOf(r.bonus);
+      if (str(r.workDate)) t.workDate = str(r.workDate);
+      if (num(r.actual) > 0) t.actual = num(r.actual);
       if (str(r.feedback)) { t.fb = str(r.feedback); t.fbAt = str(r.feedbackAt); if (str(r.feedbackDone)) t.fbDone = true; } // cán bộ phản hồi không tán thành
       if (str(r.note)) t.note = str(r.note);
       var v = reviews[t.id];
@@ -524,6 +528,7 @@ function KPI_createCore(store, env) {
       row.evaluated = done ? 'Có' : ''; row.evaluatedAt = done ? (str(t.mDate) + ' ' + str(t.mTime)).trim() : ''; row.updatedAt = now;
       row.note = t.note || ''; row.by = t.by || ''; row.meta = t.x && Object.keys(t.x).length ? JSON.stringify(t.x) : '';
       row.deadline = t.deadline || ''; row.doneDate = t.doneDate || ''; row.progress = has(t.progress) ? t.progress : ''; row.bonus = t.bonus || '';
+      row.workDate = t.workDate || ''; row.actual = t.actual || '';
       row.feedback = t.fb || ''; row.feedbackAt = t.fb ? str(t.fbAt) : ''; row.feedbackDone = t.fb && t.fbDone ? 'Có' : '';
       return row;
     }));
@@ -966,7 +971,7 @@ function KPI_createCore(store, env) {
       if (t && lim && str(t.by) !== str(me.id)) err('Anh/chị chỉ xác nhận được công việc do chính mình giao; các việc khác do người phụ trách trực tiếp của cán bộ đánh giá.');
       if (!t) {
         if (!x.isNew || unlock) return;
-        t = cleanTask({ code: x.code, name: x.name, product: x.product, qty: x.qty, month: x.month, deadline: x.deadline }, period, catMap);
+        t = cleanTask({ code: x.code, name: x.name, product: x.product, qty: x.qty, month: x.month, deadline: x.deadline, workDate: x.workDate, actual: x.actual }, period, catMap);
         if (!t.name) err('Công việc thêm cho cấp dưới chưa ghi tên.');
         t.by = str(me.id);
         if (assign) t.x = { acc: 'cho', at: nowIso() }; // giao việc: chờ cán bộ xác nhận
@@ -1375,6 +1380,7 @@ function KPI_createCore(store, env) {
   };
   /** Cán bộ lưu kê khai: dòng lãnh đạo đã chấm thì giữ nguyên, các dòng khác lấy theo nội dung gửi lên. */
   A.pp2Save = function (me, d) {
+    err('Trang đánh giá PP2 đã được nâng cấp để dùng chung phiếu với PP1. Anh/chị tải lại trang (bấm F5) rồi thao tác lại.');
     var period = needPeriod(d.periodId);
     if (!pp2Perms(me, me, period).canEdit) err(phaseOf(period) === 'mo' ? 'Tài khoản này không tự kê công việc.' : 'Kỳ đánh giá đã chốt nhập nên không lưu kê khai được.');
     var old = {}, cat = catalogMap(), seen = {}, rows = [];
@@ -1397,6 +1403,7 @@ function KPI_createCore(store, env) {
   };
   /** Lãnh đạo trực tiếp chấm H, Q, T từng dòng; mode 'open' = bỏ chấm để cán bộ sửa lại. */
   A.pp2Score = function (me, d) {
+    err('Trang đánh giá PP2 đã được nâng cấp để dùng chung phiếu với PP1. Anh/chị tải lại trang (bấm F5) rồi thao tác lại.');
     var period = needPeriod(d.periodId), owner = find('Users', d.userId) || err('Không tìm thấy cán bộ.');
     if (!pp2Perms(me, owner, period).canScore) err(phaseOf(period) === 'khoa' ? 'Kỳ đánh giá đã khoá.' : 'Chỉ người phụ trách trực tiếp hoặc quản lý vượt cấp mới chấm được cho cán bộ này.');
     var rows = pp2Load(period, owner.id), by = {}, at = stamp(), n = 0;
@@ -1428,6 +1435,7 @@ function KPI_createCore(store, env) {
   };
   /** Lãnh đạo giao việc vào phiếu PP2 của cấp dưới (như giao việc ở PP1): dòng mới mang tên người giao, cán bộ bổ sung ngày, giờ thực tế rồi lãnh đạo chấm. */
   A.pp2Assign = function (me, d) {
+    err('Trang đánh giá PP2 đã được nâng cấp để dùng chung phiếu với PP1. Anh/chị tải lại trang (bấm F5) rồi thao tác lại.');
     var period = needPeriod(d.periodId), owner = find('Users', d.userId) || err('Không tìm thấy cán bộ.');
     if (!pp2Perms(me, owner, period).canScore) err(phaseOf(period) === 'khoa' ? 'Kỳ đánh giá đã khoá.' : 'Chỉ người phụ trách trực tiếp hoặc quản lý vượt cấp mới giao việc được cho cán bộ này.');
     var rows = pp2Load(period, owner.id), cat = catalogMap(), n = 0;
@@ -1456,6 +1464,41 @@ function KPI_createCore(store, env) {
     });
     return { period: periodOut(period), rows: out, workHours: workHours(period) };
   };
+  /** Chạy tay MỘT LẦN: đưa các dòng đã lưu riêng theo PP2 (mã phiếu PP2|kỳ|CCCD) về chung phiếu với PP1, rồi xoá các dòng riêng đó.
+   *  Từ nay PP1 và PP2 dùng chung một phiếu, một bộ dòng ở PhieuDanhGia và DanhGia; hai trang chỉ khác cách trình bày và cách chấm. */
+  function pp2Migrate() {
+    var groups = {}, out = [], cat = catalogMap();
+    store.all('Tasks').forEach(function (r) { var e = str(r.evalId); if (e.indexOf('PP2|') === 0) groups[e] = 1; });
+    Object.keys(groups).forEach(function (key) {
+      var p = key.split('|'), period = find('Periods', p[1]), owner = find('Users', p[2]);
+      if (!period || !owner) { out.push('Bỏ qua ' + key + ' (không thấy kỳ hoặc người dùng)'); return; }
+      var rows = pp2Load(period, owner.id), ev = evalOf(period.id, owner.id), tasks = ev ? loadTasks(ev.id) : [], add = 0;
+      rows.forEach(function (o) {
+        if (tasks.some(function (t) { return t.name === o.name && str(t.workDate) === str(o.workDate); })) return;
+        var t = cleanTask({ code: o.code, name: o.name || '(chưa ghi tên)', product: o.type, qty: o.qty || 1, deadline: o.deadline, workDate: o.workDate, actual: o.actual, link: o.link }, period, cat);
+        if (o.asg) t.by = o.asg;
+        if (o.note) t.note = o.note;
+        if (t.code && o.locked && has(o.H)) {
+          var d = str(o.at).split(' ');
+          t.H = o.H; t.Q = o.Q; t.T = o.T; t.locked = true; t.mBy = str(o.by); t.mDate = d[0] || ''; t.mTime = d[1] || '';
+          confirmTask(t, { doneDate: o.workDate });
+        }
+        tasks.push(t); add++;
+      });
+      var cur = ev ? str(ev.status) : 'nhap', done = allLocked(tasks), locked = tasks.some(function (t) { return t.locked; });
+      var patch = { status: done ? 'da_chot' : cur === 'da_chot' ? 'cho_duyet' : cur, taskCount: tasks.length, selfTotal: sumPoints(tasks, 's'), updatedAt: nowIso(),
+        mgrTotal: locked ? sumLocked(tasks) : '', finalTotal: done ? sumLocked(tasks) : '', rating: done ? ratingOf(sumLocked(tasks)) : '', fbCount: fbCount(tasks),
+        gTotal: locked ? gLocked(tasks) : '', hours: hoursOf(tasks) };
+      var id;
+      if (ev) { id = ev.id; store.update('Evaluations', id, patch); }
+      else { id = env.uuid(); patch.id = id; patch.periodId = period.id; patch.userId = owner.id; store.insert('Evaluations', headerRow(patch)); }
+      writeTasks(id, owner.id, period, tasks);
+      store.replaceGroup('Tasks', 'evalId', key, []);
+      store.replaceGroup('Reviews', 'evalId', key, []);
+      out.push(str(owner.fullName) + ' – ' + str(period.name) + ': chuyển ' + add + '/' + rows.length + ' dòng về phiếu chung; phiếu có ' + tasks.length + ' việc, trạng thái ' + patch.status + ', G=' + patch.gTotal + ', P=' + patch.mgrTotal);
+    });
+    return out.length ? out : ['Không còn dòng PP2 lưu riêng nào.'];
+  }
   /** Nạp dòng PP2 cho một người (chạy tay từ trình soạn Apps Script để chuyển số liệu từ bảng tính sang). Bỏ qua dòng đã có cùng nội dung và ngày. */
   function pp2Import(userId, periodId, items, reviewerId) {
     var period = needPeriod(periodId), owner = find('Users', userId) || err('Không tìm thấy người dùng ' + userId + '.');
@@ -2249,5 +2292,5 @@ function KPI_createCore(store, env) {
       cube: out, detail: detail.slice(-1000).reverse() };
   };
 
-  return { handle: handle, pp2Import: pp2Import, seed: seed, importEvals: importEvals, migrateEval: migrateEval, resetAllPasswords: resetAllPasswords, importLibrary: importLibrary, importCatalog: importCatalog };
+  return { handle: handle, pp2Import: pp2Import, pp2Migrate: pp2Migrate, seed: seed, importEvals: importEvals, migrateEval: migrateEval, resetAllPasswords: resetAllPasswords, importLibrary: importLibrary, importCatalog: importCatalog };
 }

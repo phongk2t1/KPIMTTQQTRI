@@ -1266,6 +1266,11 @@ function KPI_createCore(store, env) {
   /** Các trường cán bộ còn thiếu của một dòng (đúng danh sách bắt buộc của bảng tính: mã sản phẩm không bắt buộc, điểm chuẩn phải lớn hơn 0). */
   function pp2Missing(o) {
     var miss = [];
+    if (o.src === 'pp1') { // việc kê ở phiếu PP1: chỉ cần có tên và điểm chuẩn
+      if (!o.name) miss.push('Nội dung công việc');
+      if (!(num(o.g) > 0)) miss.push(o.code ? 'Điểm chuẩn' : 'Điểm chuẩn (chưa chọn đủ 5 mức A–E ở phiếu PP1)');
+      return miss;
+    }
     if (!o.name) miss.push('Nội dung công việc');
     if (!o.workDate) miss.push('Ngày thực hiện');
     if (!o.type) miss.push('Loại sản phẩm');
@@ -1276,7 +1281,25 @@ function KPI_createCore(store, env) {
     if (o.spName && !(num(o.g) > 0) && num(o.qty) > 0) miss.push('Điểm chuẩn');
     return miss;
   }
-  function pp2Scored(o) { return has(o.H) && has(o.Q) && has(o.T) && o.locked; }
+  function pp2Scored(o) { return o.src === 'pp1' ? !!o.locked && has(o.p) : has(o.H) && has(o.Q) && has(o.T) && o.locked; }
+  /** Các việc cán bộ đã kê ở phiếu PP1 của cùng kỳ, đưa vào phiếu PP2 dưới dạng dòng chỉ xem (không sao chép, không ghi lại):
+   *  việc theo mã danh mục giữ H, Q, T lãnh đạo đã xác nhận; việc chấm theo A–E lấy điểm tự kê làm điểm chuẩn và điểm lãnh đạo chấm làm điểm thực đạt. */
+  function pp1AsRows(period, owner, cat) {
+    var ev = evalOf(period.id, owner.id);
+    if (!ev) return [];
+    return loadTasks(ev.id).map(function (t) {
+      var sc = tcalc(t, 's'), m = t.locked ? tcalc(t, 'm') : null, q = num(t.qty) || 1, c = t.code ? cat[str(t.code)] : null;
+      var o = { id: 'pp1:' + t.id, src: 'pp1', name: t.name, workDate: t.mDone || t.doneDate || '', type: t.product, purpose: c ? str(c.purpose) : '', spName: c ? str(c.name) : '', code: t.code || '',
+        timeStd: c ? str(c.time) : '', actual: '', qty: q, unit: t.unit || '', std: t.code ? (m ? m.base : num(t.std)) : (sc ? sc.point : 0), link: t.link || '', ae: !t.code, n: m ? m.n : sc ? sc.n : '' };
+      o.g = r4(o.std * q);
+      if (m) {
+        o.locked = true; o.p = r4(q * m.point * (1 + num(t.mBonus) / 100)); o.by = str(t.mBy); o.at = (str(t.mDate) + ' ' + str(t.mTime)).trim();
+        if (t.code) { o.H = num(t.H); o.Q = num(t.Q); o.T = num(t.T); }
+      }
+      if (t.note) o.note = t.note;
+      return o;
+    });
+  }
   /** a, b, c, KPI của một người: chỉ tính khi không còn dòng kê khai thiếu hoặc chưa chấm (như ô R3:R7 của bảng tính). */
   function pp2Sum(rows) {
     var G = 0, GH = 0, GHQ = 0, GHT = 0, P = 0, done = 0, lack = 0, wait = 0, issues = [];
@@ -1284,7 +1307,8 @@ function KPI_createCore(store, env) {
       var miss = pp2Missing(o);
       if (miss.length) { lack++; issues.push('Dòng ' + (i + 1) + ': thiếu ' + miss.join(', ')); return; }
       if (!pp2Scored(o)) { wait++; issues.push('Dòng ' + (i + 1) + ': chưa chấm H, Q, T'); return; }
-      G += o.g; GH += o.g * o.H; GHQ += o.g * o.H * o.Q; GHT += o.g * o.H * o.T; P += o.g * o.H * (1 + o.Q + o.T) / 3; done++;
+      if (o.src === 'pp1' && o.ae) { G += o.g; GH += o.p; GHQ += o.p; GHT += o.p; P += o.p; done++; return; } // việc PP1 chấm theo A–E: không có H, Q, T riêng
+      G += o.g; GH += o.g * o.H; GHQ += o.g * o.H * o.Q; GHT += o.g * o.H * o.T; P += o.src === 'pp1' ? o.p : o.g * o.H * (1 + o.Q + o.T) / 3; done++;
     });
     var ready = !lack && !wait && G > 0;
     var a = ready ? GH / G : null, b = ready ? GHQ / G : null, c = ready ? GHT / G : null;
@@ -1324,16 +1348,10 @@ function KPI_createCore(store, env) {
   function pp2Out(me, period, owner, rows) {
     var names = {}; store.all('Users').forEach(function (u) { names[str(u.id)] = str(u.fullName); });
     rows.forEach(function (o) { if (o.by) o.byName = names[o.by] || o.by; });
-    // Kết quả theo PP1 của cùng người, cùng kỳ: chỉ đọc để đối chiếu, không sao chép dữ liệu.
-    var ev = evalOf(period.id, owner.id), t1 = ev ? loadTasks(ev.id) : [];
-    var pp1 = t1.map(function (t) {
-      var sc = tcalc(t, 's'), m = t.locked ? tcalc(t, 'm') : null, q = num(t.qty) || 1;
-      return { name: t.name, code: t.code || '', product: t.product, qty: q, n: m ? m.n : sc ? sc.n : '', g: r4(q * (m && t.code ? m.base : sc ? sc.point : 0)),
-        p: m ? r4(q * m.point * (1 + num(t.mBonus) / 100)) : null, H: t.code && m ? t.H : null, Q: t.code && m ? t.Q : null, T: t.code && m ? t.T : null, locked: !!t.locked, note: t.note || '' };
-    });
-    var G1 = t1.some(function (t) { return t.locked; }) ? gLocked(t1) : 0, P1 = t1.some(function (t) { return t.locked; }) ? sumLocked(t1) : 0;
-    return { period: periodOut(period), owner: pub(owner), managerName: names[str(owner.managerId)] || '', perms: pp2Perms(me, owner, period), rows: rows, sum: pp2Sum(rows),
-      pp1: { status: ev ? str(ev.status) : '', rows: pp1, G: G1, P: P1, kpi: G1 > 0 ? P1 / G1 : null } };
+    // Phiếu PP2 gồm cả các việc đã kê ở phiếu PP1 của cùng kỳ (đều là công việc của cán bộ, chỉ khác cách đánh giá), xếp trước các dòng kê theo PP2.
+    var all = pp1AsRows(period, owner, catalogMap()).concat(rows);
+    all.forEach(function (o) { if (o.by && !o.byName) o.byName = names[o.by] || o.by; });
+    return { period: periodOut(period), owner: pub(owner), managerName: names[str(owner.managerId)] || '', perms: pp2Perms(me, owner, period), rows: all, sum: pp2Sum(all) };
   }
   A.pp2Get = function (me, d) {
     var period = needPeriod(d.periodId), owner = d.userId ? find('Users', d.userId) : me;
@@ -1349,6 +1367,7 @@ function KPI_createCore(store, env) {
     pp2Load(period, me.id).forEach(function (o) { old[o.id] = o; });
     (Array.isArray(d.rows) ? d.rows : []).slice(0, 300).forEach(function (x) {
       var id = cut((x || {}).id, 40), keep = old[id];
+      if (id.indexOf('pp1:') === 0 || (x || {}).src === 'pp1') return; // việc của phiếu PP1 không lưu lại ở PP2
       if (keep && keep.locked) { if (!seen[id]) { seen[id] = 1; rows.push(keep); } return; }
       var o = pp2Clean(x, cat);
       if (!o.name && !o.workDate && !o.type && !o.code && !o.actual && !o.qty) return; // dòng trống
@@ -1389,11 +1408,11 @@ function KPI_createCore(store, env) {
   };
   /** Danh sách người mình đánh giá theo PP2 (quản trị: toàn bộ người tự kê), kèm tình trạng và KPI. Đọc hai trang tính một lần. */
   A.pp2List = function (me, d) {
-    var period = needPeriod(d.periodId), pre = 'PP2|' + str(period.id) + '|', tk = {}, rv = {}, admin = on(me.isAdmin);
+    var period = needPeriod(d.periodId), pre = 'PP2|' + str(period.id) + '|', tk = {}, rv = {}, admin = on(me.isAdmin), cat = catalogMap();
     store.all('Reviews').forEach(function (r) { if (str(r.evalId).indexOf(pre) === 0) rv[str(r.evalId) + '#' + str(r.id)] = r; });
     store.all('Tasks').forEach(function (r) { var e = str(r.evalId); if (e.indexOf(pre) === 0) (tk[e] || (tk[e] = [])).push(r); });
     var out = store.all('Users').filter(function (u) { return on(u.active) && on(u.selfEval) && str(u.id) !== str(me.id) && (admin || isBoss(me, u)); }).map(function (u) {
-      var key = pre + str(u.id), rows = (tk[key] || []).slice().sort(function (a, b) { return num(a.order) - num(b.order); }).map(function (r) { return pp2Row(r, rv[key + '#' + str(r.id)]); }), sm = pp2Sum(rows);
+      var key = pre + str(u.id), rows = pp1AsRows(period, u, cat).concat((tk[key] || []).slice().sort(function (a, b) { return num(a.order) - num(b.order); }).map(function (r) { return pp2Row(r, rv[key + '#' + str(r.id)]); })), sm = pp2Sum(rows);
       return { user: pub(u), rows: sm.rows, done: sm.done, lack: sm.lack, wait: sm.wait, G: sm.G, P: sm.P, kpi: sm.kpi, a: sm.a, b: sm.b, c: sm.c, status: sm.status, canScore: isBoss(me, u) };
     });
     return { period: periodOut(period), rows: out };

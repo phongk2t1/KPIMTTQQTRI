@@ -1542,6 +1542,15 @@
       '<div class="stat"><div class="v">' + (p2Pct(sm.b) || '–') + '</div><div class="l">Hệ số b · có xét chất lượng</div></div>' +
       '<div class="stat"><div class="v">' + (p2Pct(sm.c) || '–') + '</div><div class="l">Hệ số c · có xét tiến độ</div></div>' +
       '<div class="stat hl"><div class="v">' + (p2Pct(sm.kpi) || '–') + '</div><div class="l">KPI = trung bình của a, b, c</div><div class="x">Điểm chuẩn ' + f4(sm.G) + ' · thực đạt ' + f4(sm.P) + '</div></div></div>' +
+      (function () {
+        var st = P2.d.stats || {}, over = st.workHours && st.stdHours > st.workHours;
+        return '<div class="stats" style="margin-bottom:10px"><div class="stat"><div class="v">' + sm.rows + '</div><div class="l">Tổng số dòng công việc</div><div class="x">' + (st.fromPp1 || 0) + ' dòng kê ở PP1 · ' + (st.assigned || 0) + ' việc lãnh đạo giao</div></div>' +
+          '<div class="stat s-done"><div class="v">' + sm.done + '</div><div class="l">Dòng đã chấm</div></div>' +
+          '<div class="stat"><div class="v">' + sm.wait + '</div><div class="l">Dòng chờ chấm</div></div>' +
+          '<div class="stat s-none"><div class="v">' + sm.lack + '</div><div class="l">Dòng kê khai thiếu</div></div>' +
+          '<div class="stat"><div class="v">' + fmt(st.stdHours || 0) + ' giờ</div><div class="l">Giờ chuẩn quy đổi của phiếu</div><div class="x">quỹ giờ làm việc của kỳ: ' + fmt(st.workHours || 0) + ' giờ' + (over ? ' · <b>vượt quỹ giờ, cần kiểm tra</b>' : '') + '</div></div>' +
+          '<div class="stat"><div class="v">' + fmt(st.actHours || 0) + ' giờ</div><div class="l">Giờ thực tế đã kê (các dòng PP2)</div></div></div>';
+      })() +
       '<p style="margin:0"><b>Trạng thái:</b> ' + h(sm.status) + (sm.issues.length ? ' <a role="button" style="cursor:pointer" data-act="p2Why">Kiểm tra vì sao KPI chưa hiện</a>' : '') + '</p>' +
       '<p class="muted small" style="margin:6px 0 0">Số liệu tính theo lần lưu gần nhất. KPI chỉ hiện khi mọi dòng đã kê đủ và đã được chấm đủ H, Q, T.</p></div>';
   }
@@ -1575,14 +1584,18 @@
   function p2ListHtml() {
     var rows = P2.list.rows.slice().sort(function (a, b) { return (b.wait - a.wait) || a.user.fullName.localeCompare(b.user.fullName, 'vi'); });
     var wait = rows.reduce(function (n, r) { return n + r.wait; }, 0), ready = rows.filter(function (r) { return r.kpi != null; }).length;
+    var sum = function (k) { return rows.reduce(function (n, r) { return n + (Number(r[k]) || 0); }, 0); }, tG = sum('G'), tP = sum('P'), tRows = sum('rows'), tDone = sum('done'), tLack = sum('lack'), tAsg = sum('assigned');
     return '<div class="stats"><div class="stat hl"><div class="v">' + rows.length + '</div><div class="l">Người trong danh sách</div></div><div class="stat"><div class="v">' + wait + '</div><div class="l">Dòng đang chờ chấm H, Q, T</div></div>' +
-      '<div class="stat s-done"><div class="v">' + ready + '</div><div class="l">Người đã có KPI</div></div></div>' +
-      '<div class="card"><h2>Đánh giá cấp dưới theo PP2 · ' + h(P2.list.period.name) + '</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Họ tên</th><th>Đơn vị</th><th class="num">Số dòng</th><th class="num">Đã chấm</th><th class="num">Chờ chấm</th><th class="num">Kê thiếu</th>' +
+      '<div class="stat s-done"><div class="v">' + ready + '</div><div class="l">Người đã có KPI</div></div>' +
+      '<div class="stat"><div class="v">' + tRows + '</div><div class="l">Tổng số dòng công việc</div><div class="x">' + tDone + ' đã chấm · ' + tLack + ' kê thiếu · ' + tAsg + ' việc đã giao</div></div>' +
+      '<div class="stat"><div class="v">' + f4(Math.round(tG * 1e4) / 1e4) + '</div><div class="l">Tổng điểm chuẩn đã chấm (G)</div></div>' +
+      '<div class="stat"><div class="v">' + f4(Math.round(tP * 1e4) / 1e4) + '</div><div class="l">Tổng điểm thực đạt (P)</div><div class="x">' + (tG > 0 ? 'bình quân ' + p2Pct(tP / tG) : '') + '</div></div></div>' +
+      '<div class="card"><h2>Đánh giá cấp dưới theo PP2 · ' + h(P2.list.period.name) + '</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Họ tên</th><th>Đơn vị</th><th class="num">Số dòng</th><th class="num">Đã chấm</th><th class="num">Chờ chấm</th><th class="num">Kê thiếu</th><th class="num">Việc giao</th><th class="num">Điểm chuẩn</th><th class="num">Thực đạt</th><th class="num">Giờ chuẩn</th><th class="num">Giờ thực tế</th>' +
       '<th class="num">a</th><th class="num">b</th><th class="num">c</th><th class="num">KPI</th><th>Trạng thái</th></tr></thead><tbody>' +
       (rows.map(function (r) {
         return '<tr class="click" data-act="p2Go" data-u="' + h(r.user.id) + '"><td><b>' + h(r.user.fullName) + '</b><div class="muted small">' + h(r.user.title || '') + '</div></td><td>' + h(unitName(r.user.unitId)) + '</td><td class="num">' + r.rows + '</td><td class="num">' + r.done + '</td>' +
-          '<td class="num">' + (r.wait ? '<span class="badge b-amber">' + r.wait + '</span>' : 0) + '</td><td class="num">' + r.lack + '</td><td class="num">' + p2Pct(r.a) + '</td><td class="num">' + p2Pct(r.b) + '</td><td class="num">' + p2Pct(r.c) + '</td><td class="num"><b>' + p2Pct(r.kpi) + '</b></td><td class="small">' + h(r.rows ? r.status : 'Chưa kê khai') + '</td></tr>';
-      }).join('') || '<tr><td colspan="11" class="muted">Anh/chị chưa phụ trách đánh giá ai.</td></tr>') + '</tbody></table></div><p class="muted small" style="margin:8px 0 0">Bấm vào một dòng để mở bảng kê khai của người đó và chấm H, Q, T.</p></div>';
+          '<td class="num">' + (r.wait ? '<span class="badge b-amber">' + r.wait + '</span>' : 0) + '</td><td class="num">' + r.lack + '</td><td class="num">' + (r.assigned || 0) + '</td><td class="num">' + f4(r.G) + '</td><td class="num">' + f4(r.P) + '</td><td class="num"' + (P2.list.workHours && r.stdHours > P2.list.workHours ? ' style="color:var(--red);font-weight:700" title="Vượt quỹ giờ của kỳ"' : '') + '>' + fmt(r.stdHours || 0) + '</td><td class="num">' + fmt(r.actHours || 0) + '</td><td class="num">' + p2Pct(r.a) + '</td><td class="num">' + p2Pct(r.b) + '</td><td class="num">' + p2Pct(r.c) + '</td><td class="num"><b>' + p2Pct(r.kpi) + '</b></td><td class="small">' + h(r.rows ? r.status : 'Chưa kê khai') + '</td></tr>';
+      }).join('') || '<tr><td colspan="16" class="muted">Anh/chị chưa phụ trách đánh giá ai.</td></tr>') + '</tbody></table></div><p class="muted small" style="margin:8px 0 0">Bấm vào một dòng để mở bảng kê khai của người đó và chấm H, Q, T.</p></div>';
   }
   function p2ApplyCode(r, code) {
     var c = (S.cat || []).filter(function (x) { return x.id === code; })[0];

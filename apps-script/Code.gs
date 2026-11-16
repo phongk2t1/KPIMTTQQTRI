@@ -245,7 +245,7 @@ function doGet() {
 /* Các thao tác chỉ đọc không cần xếp hàng chờ khoá: nhiều người đăng nhập, xem phiếu cùng lúc vẫn chạy song song.
  * Chỉ thao tác ghi mới lấy khoá để hai lượt ghi không chen nhau. */
 var KPI_READ_ACTIONS = { login: 1, bootstrap: 1, overview: 1, stats: 1, getEvaluation: 1, tasksFrom: 1, adminList: 1,
-  evidenceGet: 1, evidenceSources: 1, assignBoard: 1, libraryFind: 1, adminLibraryList: 1, rating: 1, catalog: 1 };
+  evidenceGet: 1, evidenceSources: 1, assignBoard: 1, pp2Get: 1, pp2List: 1, libraryFind: 1, adminLibraryList: 1, rating: 1, catalog: 1 };
 
 function doPost(e) {
   var req;
@@ -317,6 +317,24 @@ function usageEnv_(ss) {
       return true;
     }
   };
+}
+
+/** Chạy tay MỘT LẦN: chuyển 3 dòng của trang "Hiệu" trong bảng tính "Hệ thống kê khai và đánh giá KPI - thử nghiệm" sang PP2 để làm thử.
+ *  Tìm kỳ tháng 11/2026 theo ngày; chạy lại không tạo dòng trùng. */
+function importPP2Hieu() {
+  var lock = LockService.getScriptLock(); lock.waitLock(28000);
+  try {
+    var store = makeSheetStore_(getSpreadsheet_()), core = KPI_createCore(store, makeEnv_());
+    var ps = store.all('Periods').filter(function (p) { return String(p.startDate) <= '2026-11-15' && String(p.endDate) >= '2026-11-15'; })
+      .sort(function (a, b) { return (Date.parse(a.endDate) - Date.parse(a.startDate)) - (Date.parse(b.endDate) - Date.parse(b.startDate)); });
+    if (!ps.length) throw new Error('Chưa có kỳ đánh giá nào chứa ngày 15/11/2026.');
+    Logger.log('Kỳ: ' + ps[0].name + ' (' + ps[0].id + ')');
+    Logger.log(core.pp2Import('045099002392', ps[0].id, [
+      { name: 'Tham mưu Bài phát biểu của đồng chí Chủ tịch tại buổi làm việc với Bí thư Tỉnh uỷ', workDate: '2026-11-04', code: 'BPB02', actual: 12, qty: 1, h: 1, q: 0.5, t: 1, note: 'Sai sót nghiêm trọng (theo trang Hiệu của bảng tính thử nghiệm)' },
+      { name: 'Tham mưu Công văn đồng ý giữ lại trụ sở LMHTX tỉnh tại phía Nam', workDate: '2026-11-10', code: 'CV05', actual: 1, qty: 1, h: 1, q: 1, t: 1 },
+      { name: 'Tham dự họp buổi làm việc với đồng chí Bí thư Tỉnh uỷ', workDate: '2026-11-06', code: 'TD03', actual: 4, qty: 4, h: 1, q: 1, t: 1 }
+    ]));
+  } finally { lock.releaseLock(); }
 }
 
 /** Tạo các trang tính còn thiếu, kèm dòng tiêu đề tiếng Việt. */

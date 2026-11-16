@@ -286,7 +286,7 @@
         setEval(d2);
         return;
       }
-      else if (route === 'pp2duyet') html = reviewHtml(await overview());
+      else if (route === 'pp2duyet') html = reviewHtml(await api('overview', { periodId: S.periodId, p2: 1 }));
       else if (route === 'xeploai') { RT = await api('rating', { periodId: S.periodId }); html = ratingHtml(); }
       else if (route === 'tudanhgia' || route === 'phieu') {
         var d = await api('getEvaluation', { periodId: S.periodId, userId: route === 'phieu' ? arg : '' });
@@ -616,6 +616,16 @@
   /* ---------- Đánh giá cấp dưới ---------- */
   function rowsTable(rows, withAction) {
     if (!rows.length) return '<div class="muted">Không có ai.</div>';
+    if (S.pp2) {
+      var r4 = function (v) { return f4(Math.round((v || 0) * 1e4) / 1e4); }, kp = function (o) { return o && o.G > 0 ? p2Pct((o.GH + o.GHQ + o.GHT) / o.G / 3) : '–'; };
+      return '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Họ tên</th><th>Đơn vị</th><th>Cấp</th><th class="num">Số việc</th><th class="num">Điểm chuẩn đã chấm</th><th class="num">Điểm thực đạt</th><th class="num">KPI riêng</th><th class="num">Kết quả tổng hợp (cả cây dưới)</th><th>Trạng thái</th>' + (withAction ? '<th></th>' : '') + '</tr></thead><tbody>' +
+        rows.map(function (r) {
+          var p = r.p2 || { own: {}, total: {} };
+          return '<tr class="click" data-act="open" data-u="' + h(r.user.id) + '"><td><b>' + h(r.user.fullName) + '</b><div class="muted small">' + h(r.user.title) + '</div></td><td>' + h(unitName(r.user.unitId)) + '</td><td>' + h(LEVEL[r.user.level]) + '</td>' +
+            '<td class="num">' + (r.taskCount || '–') + '</td><td class="num">' + r4(p.own.G) + '</td><td class="num">' + r4(p.own.P) + '</td><td class="num">' + kp(p.own) + '</td><td class="num"><b>' + r4(p.total.P) + '</b><div class="muted small">KPI ' + kp(p.total) + '</div></td><td>' + badge(r.status) + (r.fb ? ' <span class="badge b-amber" title="Cán bộ phản hồi không tán thành kết quả chấm">' + r.fb + ' phản hồi</span>' : '') + '</td>' +
+            (withAction ? '<td class="right"><span class="btn sm primary">Đánh giá</span></td>' : '') + '</tr>';
+        }).join('') + '</tbody></table></div>';
+    }
     return '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Họ tên</th><th>Đơn vị</th><th>Cấp</th><th class="num">Số việc</th><th class="num">Tự chấm</th><th class="num">Đã được chấm</th><th class="num">KPI tổng hợp</th><th>Trạng thái</th>' + (withAction ? '<th></th>' : '') + '</tr></thead><tbody>' +
       rows.map(function (r) {
         return '<tr class="click" data-act="open" data-u="' + h(r.user.id) + '"><td><b>' + h(r.user.fullName) + '</b><div class="muted small">' + h(r.user.title) + '</div></td><td>' + h(unitName(r.user.unitId)) + '</td><td>' + h(LEVEL[r.user.level]) + '</td>' +
@@ -770,6 +780,7 @@
   }
   /** Thẻ "Kết quả KPI" trên phiếu: việc tự thực hiện + kết quả của những người do người này phụ trách. */
   function teamHtml() {
+    if (S.pp2) return p2TeamHtml();
     var d = E.d, team = d.team || [], k = d.kpi || { own: 0, total: 0, people: 0, done: 0 }, o = d.owner;
     if (!team.length) return '';
     var sub = Math.round((k.total - k.own) * 100) / 100;
@@ -789,9 +800,9 @@
   function evalHtml() {
     var d = E.d, p = d.perms, ev = d.ev, o = d.owner;
     if (ev.status === 'khong_ke') {
-      return (o.id !== S.user.id ? '<p><a href="#/baocao">‹ Quay lại KPI tổng hợp</a></p>' : '') +
+      return (o.id !== S.user.id ? (S.pp2 ? '<p><a href="#/pp2duyet">‹ Quay lại danh sách</a></p>' : '<p><a href="#/baocao">‹ Quay lại KPI tổng hợp</a></p>') : '') +
         '<div class="card"><h2>' + h(o.fullName) + '</h2><div class="muted">' + h(o.title) + ' · ' + h(unitName(o.unitId)) + ' · ' + h(LEVEL[o.level]) + '</div>' +
-        '<p>Chức danh này không tự kê công việc. Kết quả KPI là tổng kết quả của những người do đồng chí phụ trách.</p></div>' + teamHtml();
+        '<p>Chức danh này không tự kê công việc. Kết quả KPI là tổng kết quả của những người do đồng chí phụ trách.</p>' + (S.pp2 ? '<div id="p2Kpi">' + p2KpiBlock() + '</div>' : '') + '</div>' + teamHtml();
     }
     var banner = '';
     if (d.period.phase === 'khoa') banner = '<div class="banner gray">Kỳ đánh giá đã khoá, phiếu chỉ xem.</div>';
@@ -822,7 +833,7 @@
     btns += '<button class="btn" data-act="excelEval">Xuất Excel</button><button class="btn" data-act="print">In / Lưu PDF</button>';
 
     return '<div class="print-head"><b>' + h(S.config.orgName) + '</b><h2 style="margin-top:10px">BẢNG TỰ ĐÁNH GIÁ KẾT QUẢ CÔNG VIỆC</h2><div>' + h(d.period.name) + ' – ' + h(o.fullName) + ', ' + h(o.title) + ', ' + h(unitName(o.unitId)) + '</div></div>' +
-      (o.id !== S.user.id ? '<p class="no-print"><a href="#/' + (S.hasReports ? 'duyet' : 'baocao') + '">‹ Quay lại danh sách</a></p>' : '') +
+      (o.id !== S.user.id ? '<p class="no-print"><a href="#/' + (S.pp2 ? 'pp2duyet' : S.hasReports ? 'duyet' : 'baocao') + '">‹ Quay lại danh sách</a></p>' : '') +
       '<div class="card no-print"><div class="actions" style="justify-content:space-between"><div><h2>' + h(o.fullName) + '</h2><div class="muted">' + h(o.title) + ' · ' + h(unitName(o.unitId)) + '</div><div class="muted small">Người phụ trách đánh giá: ' + (d.managerName ? '<b>' + h(d.managerName) + '</b>' : 'chưa khai') + '</div></div>' + badge(ev.status) + '</div></div>' +
       banner + guide +
       '<div class="card">' + (p.canEdit || p.canScore ? catBoxHtml() : '') + '<div id="taskBox">' + tableHtml() + '</div></div>' + teamHtml() +
@@ -1489,23 +1500,56 @@
       td('Điểm thực đạt', 'auto num', '<b data-p2p="' + ti + '">' + (v.p == null || !(t.locked || mgr) ? '' : f4(v.p)) + '</b>');
   }
   /** a, b, c và KPI tính trên các việc đã được chấm của phiếu (việc theo mã dùng H, Q, T; việc chấm A–E lấy điểm lãnh đạo chấm làm điểm thực đạt). */
-  function p2KpiBlock() {
-    var G = 0, GH = 0, GHQ = 0, GHT = 0, P = 0, done = 0, n = 0;
+  function p2Live() {
+    var o = { G: 0, GH: 0, GHQ: 0, GHT: 0, P: 0, n: 0, done: 0 };
     E.tasks.forEach(function (t) {
       if (t.isNew) return;
-      n++;
+      o.n++;
       var v = p2Num(t);
       if (!t.locked || !v.m) return;
-      if (t.code) { G += v.g; GH += v.g * t.H; GHQ += v.g * t.H * t.Q; GHT += v.g * t.H * t.T; P += v.p; }
-      else { G += v.g; GH += v.p; GHQ += v.p; GHT += v.p; P += v.p; }
-      done++;
+      if (t.code) { o.G += v.g; o.GH += v.g * t.H; o.GHQ += v.g * t.H * t.Q; o.GHT += v.g * t.H * t.T; o.P += v.p; }
+      else { o.G += v.g; o.GH += v.p; o.GHQ += v.p; o.GHT += v.p; o.P += v.p; }
+      o.done++;
     });
-    var a = G > 0 ? GH / G : null, b = G > 0 ? GHQ / G : null, c = G > 0 ? GHT / G : null, kpi = G > 0 ? (a + b + c) / 3 : null, r = function (x) { return f4(Math.round(x * 1e4) / 1e4); };
-    return '<div class="stats" style="margin:0 0 10px"><div class="stat"><div class="v">' + (p2Pct(a) || '–') + '</div><div class="l">Hệ số a · khối lượng hoàn thành</div></div>' +
-      '<div class="stat"><div class="v">' + (p2Pct(b) || '–') + '</div><div class="l">Hệ số b · có xét chất lượng</div></div>' +
-      '<div class="stat"><div class="v">' + (p2Pct(c) || '–') + '</div><div class="l">Hệ số c · có xét tiến độ</div></div>' +
-      '<div class="stat hl"><div class="v">' + (p2Pct(kpi) || '–') + '</div><div class="l">KPI = trung bình của a, b, c</div><div class="x">Điểm chuẩn ' + r(G) + ' · thực đạt ' + r(P) + '</div></div></div>' +
-      '<p style="margin:0 0 12px"><b>Trạng thái:</b> ' + (!n ? 'Phiếu chưa có công việc nào.' : done === n ? 'Đã chấm đủ ' + n + ' việc.' : 'Đã chấm ' + done + '/' + n + ' việc; còn ' + (n - done) + ' việc chưa chấm. Các hệ số trên tính trên những việc đã chấm.') + '</p>';
+    return o;
+  }
+  function p2Abc(o) { var G = o.G; return G > 0 ? { a: o.GH / G, b: o.GHQ / G, c: o.GHT / G, kpi: (o.GH + o.GHQ + o.GHT) / G / 3 } : { a: null, b: null, c: null, kpi: null }; }
+  /** Kết quả cây dưới (tổng của máy chủ trừ phần việc tự thực hiện) và tổng = việc tự thực hiện đang hiện trên màn hình + cây dưới. */
+  function p2Tree(own) {
+    var s = (E.d.p2 || {}), t = s.total || {}, w = s.own || {}, sub = {}, tot = {};
+    ['G', 'GH', 'GHQ', 'GHT', 'P', 'n', 'done'].forEach(function (k) { sub[k] = Math.max(0, (t[k] || 0) - (w[k] || 0)); tot[k] = own[k] + sub[k]; });
+    return { sub: sub, total: tot, people: s.people || 0 };
+  }
+  /** a, b, c và KPI: việc tự thực hiện đã chấm + kết quả của những người ở cây dưới (việc theo mã dùng H, Q, T; việc chấm A–E lấy điểm lãnh đạo chấm làm điểm thực đạt). */
+  function p2KpiBlock() {
+    var own = p2Live(), lead = (E.d.team || []).length > 0, tr = p2Tree(own), x = p2Abc(lead ? tr.total : own), n = own.n, done = own.done, self = E.d.owner.selfEval;
+    var r = function (v) { return f4(Math.round(v * 1e4) / 1e4); }, T = lead ? tr.total : own;
+    return '<div class="stats" style="margin:0 0 10px"><div class="stat"><div class="v">' + (p2Pct(x.a) || '–') + '</div><div class="l">Hệ số a · khối lượng hoàn thành</div></div>' +
+      '<div class="stat"><div class="v">' + (p2Pct(x.b) || '–') + '</div><div class="l">Hệ số b · có xét chất lượng</div></div>' +
+      '<div class="stat"><div class="v">' + (p2Pct(x.c) || '–') + '</div><div class="l">Hệ số c · có xét tiến độ</div></div>' +
+      '<div class="stat hl"><div class="v">' + (p2Pct(x.kpi) || '–') + '</div><div class="l">KPI = trung bình của a, b, c</div><div class="x">Điểm chuẩn ' + r(T.G) + ' · thực đạt ' + r(T.P) + '</div></div></div>' +
+      (lead ? '<p style="margin:0 0 6px"><b>Cách tính:</b> ' + (self ? 'việc tự thực hiện đã chấm (điểm chuẩn ' + r(own.G) + ' · thực đạt ' + r(own.P) + ' · KPI ' + (p2Pct(p2Abc(own).kpi) || '–') + ') + ' : '') + 'kết quả của ' + tr.people + ' người ở cây dưới (điểm chuẩn ' + r(tr.sub.G) + ' · thực đạt ' + r(tr.sub.P) + ' · KPI ' + (p2Pct(p2Abc(tr.sub).kpi) || '–') + ') = điểm chuẩn <b>' + r(T.G) + '</b> · thực đạt <b>' + r(T.P) + '</b>.</p>' : '') +
+      (self ? '<p style="margin:0 0 12px"><b>Trạng thái:</b> ' + (!n ? 'Phiếu chưa có công việc nào.' : done === n ? 'Đã chấm đủ ' + n + ' việc.' : 'Đã chấm ' + done + '/' + n + ' việc; còn ' + (n - done) + ' việc chưa chấm. Các hệ số trên tính trên những việc đã chấm.') + '</p>' : '');
+  }
+  /** Thẻ "Kết quả KPI" của PP2: cùng ý tưởng với PP1 (việc tự thực hiện + kết quả cây dưới), số liệu theo cách chấm PP2. */
+  function p2TeamHtml() {
+    var d = E.d, team = d.team || [], o = d.owner;
+    if (!team.length) return '';
+    var own = p2Live(), tr = p2Tree(own), r = function (v) { return f4(Math.round(v * 1e4) / 1e4); }, pc = function (a) { return p2Pct(p2Abc(a).kpi) || '–'; };
+    return '<div class="card" id="p2Team"><h2>Kết quả KPI của ' + h(o.fullName) + ' · ' + h(d.period.name) + '</h2>' +
+      '<div class="stats" style="margin-bottom:14px">' +
+      '<div class="stat"><div class="v">' + (o.selfEval ? r(own.P) : '–') + '</div><div class="l">Điểm thực đạt việc tự thực hiện đã được chấm</div>' + (o.selfEval ? '<div class="x">' + own.done + '/' + own.n + ' việc đã chấm · KPI ' + pc(own) + '</div>' : '') + '</div>' +
+      '<div class="stat"><div class="v">' + r(tr.sub.P) + '</div><div class="l">Kết quả của ' + team.length + ' người do đồng chí phụ trách</div><div class="x">KPI ' + pc(tr.sub) + '</div></div>' +
+      '<div class="stat hl"><div class="v">' + r(tr.total.P) + '</div><div class="l">Tổng điểm thực đạt · KPI ' + pc(tr.total) + '</div><div class="x">' + (d.kpi ? d.kpi.done + '/' + d.kpi.people + ' người trong phạm vi đã được đánh giá' : '') + '</div></div></div>' +
+      '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Người do đồng chí phụ trách</th><th>Cấp</th><th class="num">Số việc</th><th class="num">Điểm chuẩn việc tự thực hiện</th><th class="num">Điểm thực đạt việc tự thực hiện</th><th class="num">KPI riêng</th><th class="num">Kết quả tính cho ' + h(o.fullName) + '</th><th>Trạng thái phiếu</th></tr></thead><tbody>' +
+      team.map(function (x) {
+        var p = x.p2 || { own: {}, total: {} };
+        return '<tr class="click" data-act="open" data-u="' + h(x.user.id) + '"><td><b>' + h(x.user.fullName) + '</b><div class="muted small">' + h(x.user.title) + ' · ' + h(unitName(x.user.unitId)) + '</div></td><td>' + h(LEVEL[x.user.level]) + '</td>' +
+          '<td class="num">' + (x.taskCount || '–') + '</td><td class="num">' + r(p.own.G || 0) + '</td><td class="num">' + r(p.own.P || 0) + '</td><td class="num">' + pc(p.own) + '</td>' +
+          '<td class="num"><b>' + r(p.total.P || 0) + '</b><div class="muted small">chuẩn ' + r(p.total.G || 0) + ' · KPI ' + pc(p.total) + (x.reports ? ' · gồm cả ' + x.reports + ' người cấp dưới' : '') + '</div></td><td>' + badge(x.status) + '</td></tr>';
+      }).join('') +
+      '</tbody><tfoot><tr><td colspan="6" class="right">' + (o.selfEval ? 'Việc tự thực hiện ' + r(own.P) + ' + kết quả cấp dưới ' + r(tr.sub.P) + ' = ' : 'Tổng kết quả cấp dưới = ') + '</td><td class="num">' + r(tr.total.P) + '</td><td></td></tr></tfoot></table></div>' +
+      '<p class="muted small" style="margin:10px 0 0">Kết quả của một người trong cây đánh giá gồm các việc tự thực hiện đã được chấm (kể cả việc cấp trên thêm) và kết quả của những người ở cây dưới. Việc nào được chấm thì được cộng ngay. Hệ số a, b, c và KPI tính trên tổng điểm chuẩn của cả phần tự thực hiện và cây dưới. Bấm vào một dòng để mở phiếu của người đó.</p></div>';
   }
   function p2Wrap(html) {
     var mgr = E.canMgr, edit = E.d.perms.canEdit, tail = mgr ? '<th class="hq">Nhận xét từng việc</th><th class="no-print hq">Chấm</th>' : edit ? '<th class="no-print"></th>' : '';
@@ -1520,6 +1564,7 @@
     if (!S.pp2 || !E) return;
     var k = document.getElementById('p2Kpi'), TG = 0, TP = 0;
     if (k) k.innerHTML = p2KpiBlock();
+    var tm = document.getElementById('p2Team'); if (tm) tm.outerHTML = p2TeamHtml();
     E.tasks.forEach(function (t, ti) {
       var v = p2Num(t), g = document.querySelector('[data-p2g="' + ti + '"]'), p = document.querySelector('[data-p2p="' + ti + '"]');
       if (g) g.textContent = v.g ? f4(v.g) : '';

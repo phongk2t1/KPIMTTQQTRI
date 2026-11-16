@@ -153,7 +153,7 @@ var KPI_LOG_ACTIONS = {
   overview: ['xem', 'Xem tổng quan, KPI tổng hợp'], stats: ['xem', 'Xem thống kê tổng quan'], getEvaluation: ['xem', 'Xem phiếu đánh giá'],
   tasksFrom: ['xem', 'Lấy việc từ kỳ trước'], saveSelf: ['sua', 'Lưu / nộp phiếu tự đánh giá'], review: ['sua', 'Duyệt / trả lại phiếu'],
   score: ['sua', 'Chấm điểm, nhận xét, giao việc'], reopen: ['sua', 'Mở lại phiếu đã chốt'], upload: ['them', 'Tải tệp lên'],
-  pp2Get: ['xem', 'Xem phiếu PP2'], pp2List: ['xem', 'Xem danh sách đánh giá PP2'], pp2Save: ['sua', 'Lưu kê khai PP2'], pp2Score: ['sua', 'Chấm H, Q, T (PP2)'],
+  pp2Get: ['xem', 'Xem phiếu PP2'], pp2List: ['xem', 'Xem danh sách đánh giá PP2'], pp2Save: ['sua', 'Lưu kê khai PP2'], pp2Score: ['sua', 'Chấm H, Q, T (PP2)'], pp2Assign: ['them', 'Giao việc (PP2)'],
   feedback: ['sua', 'Phản hồi không tán thành'], taskAccept: ['sua', 'Xác nhận / phản hồi nhiệm vụ được giao'], taskReassign: ['sua', 'Giao lại / rút nhiệm vụ'], taskExtend: ['sua', 'Gia hạn nhiệm vụ'],
   assignBoard: ['xem', 'Xem trang Giao việc'], assignMany: ['them', 'Giao việc cho nhiều người'],
   evidenceSources: ['xem', 'Xem tệp kết quả của cấp dưới'], evidenceBorrow: ['them', 'Lấy tệp kết quả của cấp dưới'], evidenceAdd: ['them', 'Thêm minh chứng'], evidenceRemove: ['xoa', 'Xoá minh chứng'], evidenceGet: ['xem', 'Mở minh chứng'],
@@ -1251,6 +1251,8 @@ function KPI_createCore(store, env) {
   function pp2Row(r, v) {
     var o = { id: str(r.id), name: str(r.name), workDate: str(r.workDate), type: str(r.product), purpose: str(r.purpose), spName: str(r.spName), code: str(r.code), timeStd: str(r.timeStd),
       actual: str(r.actual) === '' ? '' : num(r.actual), qty: str(r.qty) === '' ? '' : num(r.qty), unit: str(r.unit), std: num(r.std), g: num(r.g), link: str(r.link) };
+    if (str(r.by)) o.asg = str(r.by);            // việc do lãnh đạo giao
+    if (str(r.deadline)) o.deadline = str(r.deadline);
     if (v && str(v.h) !== '') {
       o.H = num(v.h); o.Q = num(v.q); o.T = num(v.t); o.by = str(v.reviewerId); o.at = (str(v.date) + ' ' + str(v.time)).trim(); o.locked = str(v.lock) === 'Khoá';
       o.p = r4(o.g * o.H * (1 + o.Q + o.T) / 3);
@@ -1320,7 +1322,7 @@ function KPI_createCore(store, env) {
     var key = pp2Key(period, owner.id), base = { userId: str(owner.id), period: str(period.name), evalId: key, pp: '2' }, at = nowIso();
     store.replaceGroup('Tasks', 'evalId', key, rows.map(function (o, i) {
       var r = { id: o.id, order: i + 1, name: o.name, product: o.type, qty: has(o.qty) ? o.qty : '', link: o.link || '', code: o.code, unit: o.unit, std: o.std || '', g: o.g || '',
-        workDate: o.workDate, purpose: o.purpose, spName: o.spName, timeStd: o.timeStd, actual: has(o.actual) ? o.actual : '', updatedAt: at };
+        workDate: o.workDate, purpose: o.purpose, spName: o.spName, timeStd: o.timeStd, actual: has(o.actual) ? o.actual : '', updatedAt: at, by: o.asg || '', deadline: o.deadline || '' };
       Object.keys(base).forEach(function (k) { r[k] = base[k]; });
       return r;
     }));
@@ -1374,9 +1376,10 @@ function KPI_createCore(store, env) {
       if (seen[o.id]) o.id = env.uuid();
       seen[o.id] = 1;
       if (keep && keep.note) o.note = keep.note; // nhận xét khi lãnh đạo trả lại
+      if (keep && keep.asg) { o.asg = keep.asg; if (keep.deadline) o.deadline = keep.deadline; } // việc lãnh đạo giao: giữ người giao và hạn
       rows.push(o);
     });
-    Object.keys(old).forEach(function (id) { if (old[id].locked && !seen[id]) rows.push(old[id]); }); // không xoá được dòng đã chấm
+    Object.keys(old).forEach(function (id) { if ((old[id].locked || old[id].asg) && !seen[id]) rows.push(old[id]); }); // không xoá được dòng đã chấm, dòng lãnh đạo giao
     pp2Write(period, me, rows);
     return pp2Out(me, period, me, pp2Load(period, me.id));
   };
@@ -1390,6 +1393,11 @@ function KPI_createCore(store, env) {
       var o = by[str((x || {}).id)];
       if (!o) return;
       var label = '“' + o.name.slice(0, 50) + (o.name.length > 50 ? '…' : '') + '”', note = cut(x.note, 1000);
+      if (d.mode === 'drop') { // rút việc mình đã giao, chưa chấm
+        if (o.locked) err('Dòng ' + label + ' đã chấm, không rút được.');
+        if (str(o.asg) !== str(me.id)) err('Chỉ rút được việc do chính anh/chị giao.');
+        rows.splice(rows.indexOf(o), 1); n++; return;
+      }
       if (d.mode === 'open') {
         if (!note) err('Hãy ghi nhận xét cho dòng ' + label + ' để cán bộ biết cần sửa gì.');
         delete o.H; delete o.Q; delete o.T; delete o.locked; delete o.p; o.note = note; o.by = str(me.id); o.at = at.date + ' ' + at.time; n++; return;
@@ -1403,6 +1411,24 @@ function KPI_createCore(store, env) {
       o.H = H; o.Q = Q; o.T = T; o.note = note; o.locked = true; o.by = str(me.id); o.at = at.date + ' ' + at.time; n++;
     });
     if (!n) err('Chưa chọn dòng nào.');
+    pp2Write(period, owner, rows);
+    return pp2Out(me, period, owner, pp2Load(period, owner.id));
+  };
+  /** Lãnh đạo giao việc vào phiếu PP2 của cấp dưới (như giao việc ở PP1): dòng mới mang tên người giao, cán bộ bổ sung ngày, giờ thực tế rồi lãnh đạo chấm. */
+  A.pp2Assign = function (me, d) {
+    var period = needPeriod(d.periodId), owner = find('Users', d.userId) || err('Không tìm thấy cán bộ.');
+    if (!pp2Perms(me, owner, period).canScore) err(phaseOf(period) === 'khoa' ? 'Kỳ đánh giá đã khoá.' : 'Chỉ người phụ trách trực tiếp hoặc quản lý vượt cấp mới giao việc được cho cán bộ này.');
+    var rows = pp2Load(period, owner.id), cat = catalogMap(), n = 0;
+    (Array.isArray(d.items) ? d.items : []).slice(0, 100).forEach(function (x) {
+      var o = pp2Clean(x, cat);
+      o.id = env.uuid();
+      if (!o.name && !o.code) return;
+      if (!o.name) o.name = o.spName;
+      o.asg = str(me.id);
+      if (DATE.test(str((x || {}).deadline))) o.deadline = str(x.deadline);
+      rows.push(o); n++;
+    });
+    if (!n) err('Chưa có việc mới nào để giao. Hãy thêm dòng, ghi nội dung hoặc chọn sản phẩm.');
     pp2Write(period, owner, rows);
     return pp2Out(me, period, owner, pp2Load(period, owner.id));
   };

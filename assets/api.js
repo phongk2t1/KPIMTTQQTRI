@@ -99,6 +99,7 @@ window.KPI_API = (function () {
     local: LOCAL,
     testAccount: LOCAL ? TEST : null,
     testFiles: LOCAL ? FILES : null,
+    testCore: LOCAL ? localCore : null, // chỉ khi chạy thử trên máy: gọi các hàm bảo trì của lõi
     call: call,
     resetLocal: function () { localStorage.removeItem(DB_KEY); localStorage.removeItem('kpi_token'); core = null; }
   };

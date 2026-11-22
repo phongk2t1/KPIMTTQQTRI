@@ -476,3 +476,13 @@ table.sheet.pp2mode { min-width: 1900px; }
   .ld-legend { border-radius: 14px; } .ld-tip { flex-direction: column; align-items: stretch; } .ld-swap { justify-content: center; } .ld-who .av { width: 64px; height: 64px; font-size: 22px; } .ld-sw { flex-direction: column; align-items: flex-start; gap: 4px; } .ld-sw > b { width: auto; } .ld-pick { width: 100%; } .ld-pick span { flex: none; white-space: nowrap; } .ld-pick select { flex: 1; min-width: 0; width: 100%; max-width: none; } .ld-crumb .sp { display: none; }
 }
 @media print { .ld { border: 0; padding: 0; background: #fff; } .ld::after { display: none; } .ld-panel, .ld-kpi { box-shadow: none; break-inside: avoid; } }
+
+/* Dashboard lãnh đạo: mọi ô trông như nút đều bấm được */
+button.ld-kpi, button.ld-state, button.ld-idx, button.ld-err, .ld-legend button { font: inherit; color: inherit; text-align: left; cursor: pointer; transition: transform .12s ease, box-shadow .12s ease, filter .12s ease; }
+button.ld-kpi:hover, button.ld-idx:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(20, 70, 160, .18); } button.ld-state:hover, button.ld-err:hover { filter: brightness(.97); }
+button.ld-kpi:active, button.ld-idx:active, button.ld-state:active, button.ld-err:active, .ld-view:active, .ld-go:active, .ld-hbar:active, .ld-rank .rw:active { transform: scale(.98); }
+button.ld-state, button.ld-err { width: 100%; } button.ld-idx { text-align: center; font: inherit; }
+.ld-legend button { display: inline-flex; align-items: center; gap: 8px; border: 0; background: none; padding: 4px 8px; border-radius: 99px; } .ld-legend button:hover { background: #eef5ff; }
+.ld-tip[data-act] { cursor: pointer; } .ld-tip[data-act]:hover p { filter: brightness(.98); }
+.ld-detail { margin: -6px 0 16px; padding: 10px 14px; border-radius: 14px; background: var(--cb); border: 1px solid var(--cl); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; } .ld-detail .ld-chip { cursor: pointer; background: #fff; font: inherit; font-weight: 700; font-size: 13.5px; }
+.ld button:focus-visible, .ld [role=button]:focus-visible { outline: 3px solid #7fb2ff; outline-offset: 2px; }

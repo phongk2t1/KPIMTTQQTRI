@@ -155,6 +155,7 @@ var KPI_LOG_ACTIONS = {
   score: ['sua', 'Chấm điểm, nhận xét, giao việc'], reopen: ['sua', 'Mở lại phiếu đã chốt'], upload: ['them', 'Tải tệp lên'],
   pp2Get: ['xem', 'Xem phiếu PP2'], pp2List: ['xem', 'Xem danh sách đánh giá PP2'], pp2Save: ['sua', 'Lưu kê khai PP2'], pp2Score: ['sua', 'Chấm H, Q, T (PP2)'], pp2Assign: ['them', 'Giao việc (PP2)'],
   feedback: ['sua', 'Phản hồi không tán thành'], taskAccept: ['sua', 'Xác nhận / phản hồi nhiệm vụ được giao'], taskReassign: ['sua', 'Giao lại / rút nhiệm vụ'], taskExtend: ['sua', 'Gia hạn nhiệm vụ'],
+  leaderBoard: ['xem', 'Xem Dashboard lãnh đạo'], leaderProfile: ['xem', 'Xem hồ sơ cán bộ (Dashboard lãnh đạo)'],
   assignBoard: ['xem', 'Xem trang Giao việc'], assignMany: ['them', 'Giao việc cho nhiều người'],
   evidenceSources: ['xem', 'Xem tệp kết quả của cấp dưới'], evidenceBorrow: ['them', 'Lấy tệp kết quả của cấp dưới'], evidenceAdd: ['them', 'Thêm minh chứng'], evidenceRemove: ['xoa', 'Xoá minh chứng'], evidenceGet: ['xem', 'Mở minh chứng'],
   catalog: ['xem', 'Xem danh mục sản phẩm'], adminCatalogSave: ['sua', 'Thêm / sửa mã danh mục'], adminCatalogDelete: ['xoa', 'Xoá mã danh mục'], adminCatalogImport: ['them', 'Nạp danh mục từ Excel'],
@@ -1234,6 +1235,80 @@ function KPI_createCore(store, env) {
     return { today: nowVn().slice(0, 10), names: names, tasks: tasks, admin: admin, unitOf: admin ? unitOf : {}, period: str(period.name),
       people: users.filter(function (u) { return on(u.selfEval) && canAssign(me, u); }).map(function (u) { return pub(u); }) };
   };
+  /* ---------- Dashboard lãnh đạo (chỉ đọc) ----------
+   * Quản trị xem toàn cơ quan; người có cấp dưới xem cây mình phụ trách (kể cả người được quản lý vượt cấp).
+   * Máy chủ trả danh sách người và công việc của kỳ; trình duyệt tự gom theo đơn vị, theo người, theo thời gian. */
+  var KPI_LOAD = { over: 1.3, under: 0.7 }; // so với bình quân đầu người của phạm vi đang xem: trên 130% là quá tải, dưới 70% là ít việc
+  function ldScope(me) {
+    var map = reportsMap();
+    if (on(me.isAdmin)) return { map: map, ok: null };
+    var ok = subtreeIds(me.id, map), ex = extraIds(me);
+    Object.keys(ex).forEach(function (k) { ok[k] = true; });
+    if (!Object.keys(ok).length) err('Trang này dành cho lãnh đạo có cán bộ do mình phụ trách.');
+    return { map: map, ok: ok };
+  }
+  function ldPeriods() { return store.all('Periods').slice().sort(function (a, b) { return str(a.startDate).localeCompare(str(b.startDate)); }); }
+  A.leaderBoard = function (me, d) {
+    var period = needPeriod(d.periodId), sc = ldScope(me), map = sc.map;
+    var users = store.all('Users').filter(function (u) { return on(u.active) && (!sc.ok || sc.ok[str(u.id)]); });
+    var pc = p2Calculator(period.id, map), evs = {}, byEval = {}, lock = {}, hasEv = {}, cat = catalogMap(), tasks = [];
+    store.all('Evaluations').forEach(function (e) { if (str(e.periodId) === str(period.id)) evs[str(e.userId)] = e; });
+    users.forEach(function (u) { var e = evs[str(u.id)]; if (e) byEval[str(e.id)] = str(u.id); });
+    store.all('Reviews').forEach(function (r) { if (byEval[str(r.evalId)]) lock[str(r.id)] = r; });
+    store.all('Evidence').forEach(function (x) { if (str(x.periodId) === str(period.id)) hasEv[str(x.taskId)] = 1; });
+    store.all('Tasks').forEach(function (r) {
+      var uid = byEval[str(r.evalId)];
+      if (!uid) return;
+      var L = lock[str(r.id)] || {}, locked = str(L.lock) === 'Khoá', c = cat[str(r.code)], q = num(r.qty) || 1;
+      tasks.push({ u: uid, id: str(r.id), name: cut(r.name, 200), type: c ? str(c.type) : str(r.product), code: str(r.code), qty: q,
+        g: Math.round((num(r.g) || num(r.point) * q) * 1e4) / 1e4, hrs: num(r.actual), wd: str(r.workDate), dl: str(r.deadline),
+        dn: locked && str(L.doneDate) ? str(L.doneDate) : str(r.doneDate), by: str(r.by), lk: locked ? 1 : 0, sc: locked && has(L.score) ? num(L.score) : null,
+        ev: hasEv[str(r.id)] || str(r.link) ? 1 : 0, fb: str(r.feedback) ? (str(r.feedbackDone) ? 2 : 1) : 0, up: str(r.updatedAt).slice(0, 10) });
+    });
+    var people = users.map(function (u) {
+      var e = evs[str(u.id)];
+      return { user: pub(u), status: e ? str(e.status) : (on(u.selfEval) ? 'chua_lap' : 'khong_ke'), taskCount: e ? num(e.taskCount) : 0, p2: pc(u).own, reports: (map[str(u.id)] || []).length };
+    });
+    // KPI bình quân của kỳ liền trước (cùng phạm vi) để so sánh
+    var ps = ldPeriods(), i = ps.map(function (p) { return str(p.id); }).indexOf(str(period.id)), prev = null;
+    if (i > 0) {
+      var pp = ps[i - 1], pc0 = p2Calculator(pp.id, map), sum = p2Zero();
+      users.forEach(function (u) { p2Plus(sum, pc0(u).own); });
+      prev = { name: str(pp.name), p2: p2Round(sum) };
+    }
+    return { today: nowVn().slice(0, 10), period: periodOut(period), people: people, tasks: tasks, prev: prev, load: KPI_LOAD, admin: on(me.isAdmin) };
+  };
+  /** Hồ sơ một cán bộ: chỉ số kỳ đang chọn, kết quả các kỳ, công việc, các lỗi đếm được từ dữ liệu. */
+  A.leaderProfile = function (me, d) {
+    var period = needPeriod(d.periodId), sc = ldScope(me), owner = find('Users', d.userId);
+    if (!owner) err('Không tìm thấy cán bộ.');
+    if (sc.ok && !sc.ok[str(owner.id)]) err('Anh/chị không có quyền xem hồ sơ của cán bộ này.');
+    var names = {}, cat = catalogMap();
+    store.all('Users').forEach(function (u) { names[str(u.id)] = str(u.fullName); });
+    var ps = ldPeriods(), i = ps.map(function (p) { return str(p.id); }).indexOf(str(period.id));
+    var trend = ps.slice(Math.max(0, i - 5), i + 1).map(function (p) {
+      var e = evalOf(p.id, owner.id), o = e ? p2Round(p2OwnOf(loadTasks(e.id))) : p2Zero();
+      return { periodId: str(p.id), name: str(p.name), p2: o, status: e ? str(e.status) : '' };
+    });
+    var ev = evalOf(period.id, owner.id), evd = {}, redo = 0, fbs = 0;
+    evidenceOf(owner.id, period.id).forEach(function (x) { evd[str(x.taskId)] = 1; });
+    if (ev) store.all('History').forEach(function (x) {
+      if (str(x.evalId) !== str(ev.id)) return;
+      if (str(x.action) === 'Yêu cầu sửa' || str(x.action) === 'Cho đánh giá lại') redo++;
+      if (str(x.action).indexOf('Phản hồi không tán thành') === 0) fbs++;
+    });
+    var tasks = !ev ? [] : loadTasks(ev.id).map(function (t) {
+      var c = cat[str(t.code)];
+      return { id: t.id, name: cut(t.name, 200), type: c ? str(c.type) : str(t.product), code: t.code || '', qty: t.qty, wd: t.workDate || '', dl: t.deadline || '',
+        dn: t.mDone || t.doneDate || '', lk: t.locked ? 1 : 0, ev: evd[t.id] || t.link ? 1 : 0, fb: t.fb ? (t.fbDone ? 2 : 1) : 0, by: t.by ? names[t.by] || '' : '',
+        H: has(t.H) ? t.H : null, Q: has(t.Q) ? t.Q : null, T: has(t.T) ? t.T : null, date: str(t.mDate || '') };
+    });
+    var rated = find('Ratings', str(period.id) + '|' + str(owner.id));
+    return { today: nowVn().slice(0, 10), period: periodOut(period), owner: pub(owner), managerName: names[str(owner.managerId)] || '',
+      status: ev ? str(ev.status) : (on(owner.selfEval) ? 'chua_lap' : 'khong_ke'), mgrComment: ev ? str(ev.mgrComment) : '',
+      result: rated && KPI_RATE[str(rated.result)] ? KPI_RATE[str(rated.result)] : '', trend: trend, tasks: tasks, redo: redo, fbs: fbs };
+  };
+
   /** Giao cùng một việc cho nhiều người một lượt. Mỗi người một dòng kết quả; người lỗi không làm hỏng người khác. */
   A.assignMany = function (me, d) {
     var ids = (Array.isArray(d.userIds) ? d.userIds : []).map(str).filter(Boolean).slice(0, 60), k = d.task || {}, results = [];

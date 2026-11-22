@@ -466,11 +466,18 @@ function KPI_createCore(store, env) {
     var d = new Date(Date.now() + 7 * 3600000).toISOString();
     return { date: d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4), time: d.slice(11, 19) };
   }
-  function loadTasks(evalId) {
+  /** Gom sẵn mọi dòng công việc và dòng chấm theo mã phiếu (đọc mỗi trang tính một lượt) để tính cho nhiều người mà không đọc bảng tính từng phiếu. */
+  function preTasks() {
+    var o = { tasks: {}, reviews: {} };
+    store.all('Tasks').forEach(function (r) { var k = str(r.evalId); (o.tasks[k] || (o.tasks[k] = [])).push(r); });
+    store.all('Reviews').forEach(function (r) { var k = str(r.evalId); (o.reviews[k] || (o.reviews[k] = [])).push(r); });
+    return o;
+  }
+  function loadTasks(evalId, pre) {
     if (!str(evalId)) return [];
     var reviews = {};
-    store.group('Reviews', 'evalId', evalId).forEach(function (r) { reviews[str(r.id)] = r; });
-    return store.group('Tasks', 'evalId', evalId).slice().sort(function (a, b) { return num(a.order) - num(b.order); }).map(function (r) {
+    (pre ? pre.reviews[str(evalId)] || [] : store.group('Reviews', 'evalId', evalId)).forEach(function (r) { reviews[str(r.id)] = r; });
+    return (pre ? pre.tasks[str(evalId)] || [] : store.group('Tasks', 'evalId', evalId)).slice().sort(function (a, b) { return num(a.order) - num(b.order); }).map(function (r) {
       var t = { id: str(r.id), name: str(r.name), product: str(r.product), qty: num(r.qty) || 1, month: str(r.month), s: levelsOf(r), link: str(r.link) };
       if (str(r.repeat)) t.repeat = true;
       if (str(r.from)) t.from = str(r.from);
@@ -673,7 +680,7 @@ function KPI_createCore(store, env) {
     });
     return r;
   }
-  function p2Calculator(periodId, map) {
+  function p2Calculator(periodId, map, pre) {
     var evs = {}, memo = {};
     store.all('Evaluations').forEach(function (e) { if (str(e.periodId) === str(periodId)) evs[str(e.userId)] = e; });
     function calc(u, path) {
@@ -681,12 +688,13 @@ function KPI_createCore(store, env) {
       if (memo[id]) return memo[id];
       if (path[id]) return { own: p2Zero(), total: p2Zero(), people: 0 };
       path[id] = true;
-      var own = on(u.selfEval) && evs[id] ? p2OwnOf(loadTasks(evs[id].id)) : p2Zero(), total = p2Plus(p2Zero(), own), people = 0;
+      var own = on(u.selfEval) && evs[id] ? p2OwnOf(loadTasks(evs[id].id, pre)) : p2Zero(), total = p2Plus(p2Zero(), own), people = 0;
       (map[id] || []).forEach(function (c) { var x = calc(c, path); p2Plus(total, x.total); people += x.people + 1; });
       delete path[id];
       return (memo[id] = { own: p2Round(own), total: p2Round(total), people: people });
     }
-    return function (u) { return calc(u, {}); };
+    // người có cấp dưới: gom sẵn dữ liệu một lượt rồi mới tính cả cây
+    return function (u) { if (!pre && (map[str(u.id)] || []).length) pre = preTasks(); return calc(u, {}); };
   }
 
   /* ---------- Các thao tác ---------- */
@@ -756,7 +764,7 @@ function KPI_createCore(store, env) {
     var users = store.all('Users').filter(function (u) { return on(u.active) && (!scope || scope[str(u.id)] || str(u.id) === str(me.id)); });
     var evs = {};
     store.all('Evaluations').forEach(function (e) { evs[str(e.periodId) + '|' + str(e.userId)] = e; });
-    var kpi = kpiCalculator(period.id, map), pc2 = d.p2 ? p2Calculator(period.id, map) : null;
+    var kpi = kpiCalculator(period.id, map), pc2 = d.p2 ? p2Calculator(period.id, map, preTasks()) : null;
     var rows = users.map(function (u) {
       var ev = evs[str(period.id) + '|' + str(u.id)];
       var o = evOut(ev, u), p = perms(me, ev, u, period), k = kpi(u);
@@ -1251,7 +1259,7 @@ function KPI_createCore(store, env) {
   A.leaderBoard = function (me, d) {
     var period = needPeriod(d.periodId), sc = ldScope(me), map = sc.map;
     var users = store.all('Users').filter(function (u) { return on(u.active) && (!sc.ok || sc.ok[str(u.id)]); });
-    var pc = p2Calculator(period.id, map), evs = {}, byEval = {}, lock = {}, hasEv = {}, cat = catalogMap(), tasks = [];
+    var pre = preTasks(), pc = p2Calculator(period.id, map, pre), evs = {}, byEval = {}, lock = {}, hasEv = {}, cat = catalogMap(), tasks = [];
     store.all('Evaluations').forEach(function (e) { if (str(e.periodId) === str(period.id)) evs[str(e.userId)] = e; });
     users.forEach(function (u) { var e = evs[str(u.id)]; if (e) byEval[str(e.id)] = str(u.id); });
     store.all('Reviews').forEach(function (r) { if (byEval[str(r.evalId)]) lock[str(r.id)] = r; });
@@ -1272,7 +1280,7 @@ function KPI_createCore(store, env) {
     // KPI bình quân của kỳ liền trước (cùng phạm vi) để so sánh
     var ps = ldPeriods(), i = ps.map(function (p) { return str(p.id); }).indexOf(str(period.id)), prev = null;
     if (i > 0) {
-      var pp = ps[i - 1], pc0 = p2Calculator(pp.id, map), sum = p2Zero();
+      var pp = ps[i - 1], pc0 = p2Calculator(pp.id, map, pre), sum = p2Zero();
       users.forEach(function (u) { p2Plus(sum, pc0(u).own); });
       prev = { name: str(pp.name), p2: p2Round(sum) };
     }
@@ -1286,8 +1294,8 @@ function KPI_createCore(store, env) {
     var names = {}, cat = catalogMap();
     store.all('Users').forEach(function (u) { names[str(u.id)] = str(u.fullName); });
     var ps = ldPeriods(), i = ps.map(function (p) { return str(p.id); }).indexOf(str(period.id));
-    var trend = ps.slice(Math.max(0, i - 5), i + 1).map(function (p) {
-      var e = evalOf(p.id, owner.id), o = e ? p2Round(p2OwnOf(loadTasks(e.id))) : p2Zero();
+    var pre = preTasks(), trend = ps.slice(Math.max(0, i - 5), i + 1).map(function (p) {
+      var e = evalOf(p.id, owner.id), o = e ? p2Round(p2OwnOf(loadTasks(e.id, pre))) : p2Zero();
       return { periodId: str(p.id), name: str(p.name), p2: o, status: e ? str(e.status) : '' };
     });
     var ev = evalOf(period.id, owner.id), evd = {}, redo = 0, fbs = 0;
@@ -1297,7 +1305,7 @@ function KPI_createCore(store, env) {
       if (str(x.action) === 'Yêu cầu sửa' || str(x.action) === 'Cho đánh giá lại') redo++;
       if (str(x.action).indexOf('Phản hồi không tán thành') === 0) fbs++;
     });
-    var tasks = !ev ? [] : loadTasks(ev.id).map(function (t) {
+    var tasks = !ev ? [] : loadTasks(ev.id, pre).map(function (t) {
       var c = cat[str(t.code)];
       return { id: t.id, name: cut(t.name, 200), type: c ? str(c.type) : str(t.product), code: t.code || '', qty: t.qty, wd: t.workDate || '', dl: t.deadline || '',
         dn: t.mDone || t.doneDate || '', lk: t.locked ? 1 : 0, ev: evd[t.id] || t.link ? 1 : 0, fb: t.fb ? (t.fbDone ? 2 : 1) : 0, by: t.by ? names[t.by] || '' : '',

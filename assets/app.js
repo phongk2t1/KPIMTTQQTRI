@@ -134,10 +134,11 @@
   }
 
   /* ---------- Khung trang ---------- */
-  var NAV_GROUP = { tudanhgia: 'ĐÁNH GIÁ KPI PP1', duyet: 'ĐÁNH GIÁ KPI PP1', pp2: 'ĐÁNH GIÁ KPI PP2', pp2duyet: 'ĐÁNH GIÁ KPI PP2' };
+  var NAV_GROUP = { ldtong: 'DASHBOARD LÃNH ĐẠO', ldcanbo: 'DASHBOARD LÃNH ĐẠO', ldhoso: 'DASHBOARD LÃNH ĐẠO', tudanhgia: 'ĐÁNH GIÁ KPI PP1', duyet: 'ĐÁNH GIÁ KPI PP1', pp2: 'ĐÁNH GIÁ KPI PP2', pp2duyet: 'ĐÁNH GIÁ KPI PP2' };
   function navOpen() { try { return JSON.parse(localStorage.getItem('kpi_nav') || '{}') || {}; } catch (e) { return {}; } }
   function navItems() {
     var u = S.user, items = [['tongquan', 'Tổng quan']];
+    if (S.hasReports || u.isAdmin) items.push(['ldtong', 'Toàn cơ quan'], ['ldcanbo', 'Khối lượng theo cán bộ'], ['ldhoso', 'Hồ sơ cán bộ']); // nhóm DASHBOARD LÃNH ĐẠO
     if (u.selfEval) items.push(['tudanhgia', 'Tự đánh giá']);
     if (S.canAssign) items.push(['giaoviec', 'Giao việc']);
     if (S.hasReports) items.push(['duyet', 'Đánh giá cấp dưới']);
@@ -255,7 +256,7 @@
     if (f) f.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
-  var TITLES = { tongquan: 'Tổng quan', tudanhgia: 'Phiếu tự đánh giá', phieu: 'Phiếu đánh giá', duyet: 'Đánh giá cấp dưới', baocao: 'KPI tổng hợp', xeploai: 'Xếp loại chất lượng', pp2: 'Tự đánh giá (PP2)', pp2duyet: 'Đánh giá cấp dưới (PP2)', pp2phieu: 'Phiếu đánh giá (PP2)', giaoviec: 'Giao việc và theo dõi tiến độ', quantri: 'Quản trị hệ thống', tieuchi: 'Bảng tiêu chí chấm điểm', matkhau: 'Đổi mật khẩu' };
+  var TITLES = { tongquan: 'Tổng quan', tudanhgia: 'Phiếu tự đánh giá', phieu: 'Phiếu đánh giá', duyet: 'Đánh giá cấp dưới', baocao: 'KPI tổng hợp', xeploai: 'Xếp loại chất lượng', pp2: 'Tự đánh giá (PP2)', pp2duyet: 'Đánh giá cấp dưới (PP2)', pp2phieu: 'Phiếu đánh giá (PP2)', ldtong: 'Dashboard lãnh đạo', ldcanbo: 'Dashboard lãnh đạo', ldhoso: 'Dashboard lãnh đạo', giaoviec: 'Giao việc và theo dõi tiến độ', quantri: 'Quản trị hệ thống', tieuchi: 'Bảng tiêu chí chấm điểm', matkhau: 'Đổi mật khẩu' };
   var renderSeq = 0;
   async function render() {
     modal.innerHTML = '';
@@ -267,9 +268,9 @@
     else if (allowed.indexOf(route) < 0) route = 'tongquan';
     var seq = ++renderSeq;
     S.pp2 = route.indexOf('pp2') === 0; // PP2 dùng chung phiếu, dữ liệu và mọi chức năng với PP1, chỉ khác cách trình bày bảng và cách chấm
-    var view = shell(route, TITLES[route], ['tongquan', 'tudanhgia', 'phieu', 'duyet', 'baocao', 'xeploai', 'giaoviec', 'pp2', 'pp2duyet', 'pp2phieu'].indexOf(route) >= 0);
+    var view = shell(route, TITLES[route], ['tongquan', 'tudanhgia', 'phieu', 'duyet', 'baocao', 'xeploai', 'giaoviec', 'pp2', 'pp2duyet', 'pp2phieu', 'ldtong', 'ldcanbo', 'ldhoso'].indexOf(route) >= 0);
     try {
-      var needPeriod = ['tongquan', 'tudanhgia', 'phieu', 'duyet', 'baocao', 'xeploai', 'giaoviec', 'pp2', 'pp2duyet', 'pp2phieu'].indexOf(route) >= 0;
+      var needPeriod = ['tongquan', 'tudanhgia', 'phieu', 'duyet', 'baocao', 'xeploai', 'giaoviec', 'pp2', 'pp2duyet', 'pp2phieu', 'ldtong', 'ldcanbo', 'ldhoso'].indexOf(route) >= 0;
       if (needPeriod && !S.periodId) {
         view.innerHTML = '<div class="card">Chưa có kỳ đánh giá nào. ' + (S.user.isAdmin ? 'Vào <a href="#/quantri/periods">Quản trị › Kỳ đánh giá</a> để tạo.' : 'Vui lòng liên hệ quản trị viên.') + '</div>';
         return;
@@ -286,6 +287,9 @@
         setEval(d2);
         return;
       }
+      else if (route === 'ldtong') html = ldOrgHtml(await ldData());
+      else if (route === 'ldcanbo') html = ldStaffHtml(await ldData());
+      else if (route === 'ldhoso') { var ld3 = await Promise.all([ldData(), ldProfile(arg)]); html = ldProfileHtml(ld3[0], ld3[1]); }
       else if (route === 'pp2duyet') html = reviewHtml(await api('overview', { periodId: S.periodId, p2: 1 }));
       else if (route === 'xeploai') { RT = await api('rating', { periodId: S.periodId }); html = ratingHtml(); }
       else if (route === 'tudanhgia' || route === 'phieu') {
@@ -1468,6 +1472,263 @@
     if (mine && t.locked && t.mBy && t.mBy !== S.user.id && d.period.phase !== 'khoa') out += '<div class="no-print" style="margin-top:6px"><button type="button" class="btn sm" data-act="fbOpen" data-t="' + ti + '">' + (t.fb ? 'Sửa phản hồi' : 'Phản hồi không tán thành') + '</button></div>';
     return out;
   }
+  /* ======================= DASHBOARD LÃNH ĐẠO (viết thêm, chỉ đọc dữ liệu) =======================
+   * Ba trang: Toàn cơ quan (ldtong), Khối lượng theo cán bộ (ldcanbo), Hồ sơ cán bộ (ldhoso).
+   * Số liệu lấy từ phiếu, công việc, kết quả chấm đang có; không ghi gì vào bảng tính. */
+  var LD = { d: null, key: '', unit: '', time: 'ky', prof: null, profKey: '' };
+  var LD_ST = { qua: ['Quá tải', 'ld-red'], can: ['Cân bằng', 'ld-green'], it: ['Ít việc', 'ld-blue'] };
+  var LD_IC = {
+    chart: '<svg viewBox="0 0 24 24"><path d="M4 20V10h3v10H4zm6 0V4h3v16h-3zm6 0v-7h3v7h-3z"/></svg>',
+    bank: '<svg viewBox="0 0 24 24"><path d="M12 2 2 7v2h20V7L12 2zM4 11h3v7H4v-7zm6.5 0h3v7h-3v-7zM17 11h3v7h-3v-7zM2 20h20v2H2v-2z"/></svg>',
+    people: '<svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-3.3 0-8 1.7-8 5v1h16v-1c0-3.3-4.7-5-8-5zM5 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm14 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg>',
+    doc: '<svg viewBox="0 0 24 24"><path d="M6 2h8l5 5v15H6V2zm8 1.5V8h4.5L14 3.5zM8 12h8v1.6H8V12zm0 3.5h8v1.6H8v-1.6zM8 8.5h4v1.6H8V8.5z"/></svg>',
+    target: '<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10h-2.2A7.8 7.8 0 1 1 12 4.2V2zm0 5a5 5 0 1 0 5 5h-2.2A2.8 2.8 0 1 1 12 9.2V7zm9.5-4.5-2 .3-.3 2-5 5a2 2 0 1 0 1.4 1.4l5-5 2-.3.3-2-1.4-1.4z"/></svg>',
+    cal: '<svg viewBox="0 0 24 24"><path d="M7 2v2H4v18h16V4h-3V2h-2v2H9V2H7zM6 9h12v11H6V9zm2 2v2h2v-2H8zm3 0v2h2v-2h-2zm3 0v2h2v-2h-2zm-6 3v2h2v-2H8zm3 0v2h2v-2h-2z"/></svg>',
+    bell: '<svg viewBox="0 0 24 24"><path d="M12 22a2.5 2.5 0 0 0 2.4-2H9.6A2.5 2.5 0 0 0 12 22zm7-5v-6a7 7 0 0 0-5.5-6.8V3a1.5 1.5 0 0 0-3 0v1.2A7 7 0 0 0 5 11v6l-2 2v1h18v-1l-2-2z"/></svg>',
+    bulb: '<svg viewBox="0 0 24 24"><path d="M9 21h6v-1.5H9V21zm3-19a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>',
+    layers: '<svg viewBox="0 0 24 24"><path d="m12 2 10 5-10 5L2 7l10-5zm-7.8 9L12 14.9 19.8 11 22 12.1 12 17 2 12.1 4.2 11zm0 5L12 19.9l7.8-3.9L22 17.1 12 22 2 17.1 4.2 16z"/></svg>',
+    list: '<svg viewBox="0 0 24 24"><path d="M5 3h14v18H5V3zm3 5 1.2 1.2L11.5 7l.9.9-3.2 3.2L7.1 8.9 8 8zm5 .5h4V10h-4V8.5zM8 14l1.2 1.2 2.3-2.2.9.9-3.2 3.2-2.1-2.2.9-.9zm5 .5h4V16h-4v-1.5z"/></svg>',
+    warn: '<svg viewBox="0 0 24 24"><path d="M12 2 1 21h22L12 2zm-1 7h2v6h-2V9zm0 8h2v2h-2v-2z"/></svg>',
+    cup: '<svg viewBox="0 0 24 24"><path d="M7 3h10v2h3v3a4 4 0 0 1-3.6 4A5 5 0 0 1 13 14.9V18h3v3H8v-3h3v-3.1A5 5 0 0 1 7.600 12 4 4 0 0 1 4 8V5h3V3zM6 7v1a2 2 0 0 0 1 1.700V7H6zm11 0v2.700A2 2 0 0 0 18 8V7h-1z"/></svg>',
+    pie: '<svg viewBox="0 0 24 24"><path d="M11 2.100A10 10 0 1 0 21.9 13H11V2.100zM13 2v9h9A9 9 0 0 0 13 2z"/></svg>',
+    search: '<svg viewBox="0 0 24 24"><path d="M10 3a7 7 0 1 0 4.300 12.500l5 5 1.400-1.400-5-5A7 7 0 0 0 10 3zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10z"/></svg>'
+  };
+  function ldIc(k) { return '<i class="ld-ic">' + LD_IC[k] + '</i>'; }
+  function ldN(v, d) { return Number(v || 0).toLocaleString('vi-VN', { maximumFractionDigits: d == null ? 2 : d }); }
+  function ldKpi(o) { return o && o.G > 0 ? (o.GH + o.GHQ + o.GHT) / o.G / 3 : null; }
+  function ldPc(v) { return v == null ? '–' : (v * 100).toLocaleString('vi-VN', { maximumFractionDigits: 1 }) + '%'; }
+  function ldSum(list) { var s = { G: 0, GH: 0, GHQ: 0, GHT: 0, P: 0, n: 0, done: 0 }; list.forEach(function (o) { if (o) Object.keys(s).forEach(function (k) { s[k] += o[k] || 0; }); }); return s; }
+  async function ldData(force) {
+    var pid = S.periodId;
+    if (!force && LD.d && LD.key === pid) return LD.d;
+    var old = force ? null : kept('ld:' + pid);
+    var fresh = api('leaderBoard', { periodId: pid }).then(function (d) {
+      keep('ld:' + pid, d);
+      var changed = old && JSON.stringify(old) !== JSON.stringify(d);
+      if (S.periodId === pid) { LD.d = d; LD.key = pid; if (changed && /^#\/ld(tong|canbo)/.test(location.hash)) render(); }
+      return d;
+    });
+    if (old) { LD.d = old; LD.key = pid; fresh.catch(function () { /* giữ bản đang hiện */ }); return old; }
+    return fresh;
+  }
+  /** Phòng/ban của một đơn vị: đơn vị cấp ngay dưới cơ quan (đơn vị gốc); cán bộ thuộc thẳng cơ quan thì tính cho cơ quan. */
+  function ldDept(unitId) {
+    var by = {}; S.units.forEach(function (u) { by[u.id] = u; });
+    var id = unitId, guard = 0;
+    while (guard++ < 20) { var u = by[id]; if (!u) break; var up = by[u.parentId]; if (!up || !by[up.parentId]) break; id = up.id; }
+    return id;
+  }
+  function ldWeek(today) {
+    var t = new Date(today + 'T00:00:00Z'), wd = (t.getUTCDay() + 6) % 7, a = new Date(t - wd * 864e5), b = new Date(+a + 6 * 864e5);
+    return [a.toISOString().slice(0, 10), b.toISOString().slice(0, 10)];
+  }
+  function ldInTime(t, d) {
+    if (LD.time === 'ky') return true;
+    var ds = [t.wd, t.dl, t.dn].filter(Boolean);
+    if (!ds.length) return false;
+    if (LD.time === 'nay') return ds.indexOf(d.today) >= 0;
+    var w = ldWeek(d.today);
+    return ds.some(function (x) { return x >= w[0] && x <= w[1]; });
+  }
+  /** Xếp loại khối lượng so với bình quân: trên ngưỡng trên là quá tải, dưới ngưỡng dưới là ít việc. Phạm vi từ 2 trở xuống thì không gắn nhãn lệch. */
+  function ldClass(v, avg, count, load) { return count <= 2 || !(avg > 0) ? 'can' : v > avg * load.over ? 'qua' : v < avg * load.under ? 'it' : 'can'; }
+  function ldChip(k, extra) { return '<span class="ld-chip ' + LD_ST[k][1] + '">' + LD_ST[k][0] + (extra || '') + '</span>'; }
+  /** Gom số liệu: theo người (chỉ người có kê khai công việc) và theo phòng/ban. */
+  function ldModel(d, useTime) {
+    var staff = d.people.filter(function (p) { return p.user.selfEval; }), by = {};
+    staff.forEach(function (p) { by[p.user.id] = { p: p, n: 0, g: 0, hrs: 0, open: 0, today: 0, tasks: [] }; });
+    d.tasks.forEach(function (t) {
+      var r = by[t.u];
+      if (!r || (useTime && !ldInTime(t, d))) return;
+      r.n++; r.g += t.g || 0; r.hrs += t.hrs || 0; r.tasks.push(t);
+      if (!t.lk) r.open++;
+      if (!t.lk && (t.wd === d.today || t.dl === d.today)) r.today++;
+    });
+    var rows = staff.map(function (p) { return by[p.user.id]; }), depts = {}, order = [];
+    rows.forEach(function (r) {
+      var id = ldDept(r.p.user.unitId), x = depts[id];
+      if (!x) { x = depts[id] = { id: id, name: unitName(id) || 'Chưa xếp đơn vị', n: 0, g: 0, people: 0, wait: 0, open: 0, rows: [] }; order.push(x); }
+      x.n += r.n; x.g += r.g; x.people++; x.open += r.open; x.rows.push(r);
+      if (r.p.status === 'cho_duyet') x.wait++;
+    });
+    var totalN = rows.reduce(function (s, r) { return s + r.n; }, 0), avg = rows.length ? totalN / rows.length : 0;
+    order.forEach(function (x) { x.per = x.people ? x.n / x.people : 0; x.st = ldClass(x.per, avg, order.length, d.load); });
+    return { rows: rows, depts: order, avg: avg, totalN: totalN };
+  }
+  function ldHead(no, title, sub) {
+    return '<div class="ld-head"><div class="ld-logo">' + (no ? '<b>' + no + '</b>' : LD_IC.chart) + '</div><div class="ld-tt"><h2>' + title + '</h2><div class="ld-line"></div></div></div><div class="ld-sub">' + sub + '</div>';
+  }
+  function ldCard(ic, label, value, cls, tail) {
+    return '<div class="ld-kpi ' + (cls || '') + '">' + ldIc(ic) + '<div><span>' + label + '</span><b>' + value + '</b></div>' + (tail || '') + '</div>';
+  }
+  function ldPanel(ic, title, body, cls, tail) { return '<section class="ld-panel ' + (cls || '') + '"><header>' + ldIc(ic) + '<h3>' + title + '</h3>' + (tail || '') + '</header><div class="ld-body">' + body + '</div></section>'; }
+  function ldNames(list) { return list.length <= 1 ? list.join('') : list.slice(0, -1).join(', ') + ' và ' + list[list.length - 1]; }
+
+  /* ---- Trang 1: Toàn cơ quan ---- */
+  function ldOrgHtml(d) {
+    var m = ldModel(d, false), wait = d.people.filter(function (p) { return p.status === 'cho_duyet'; }).length;
+    var kpi = ldKpi(ldSum(d.people.map(function (p) { return p.p2; }))), prev = d.prev ? ldKpi(d.prev.p2) : null, delta = kpi != null && prev != null ? (kpi - prev) * 100 : null;
+    var max = Math.max.apply(null, m.depts.map(function (x) { return x.n; }).concat([1])), step = max <= 10 ? 2 : max <= 50 ? 10 : max <= 150 ? 20 : max <= 400 ? 50 : 100, top = Math.ceil(max / step) * step, ticks = [];
+    for (var v = 0; v <= top; v += step) ticks.push(v);
+    var sorted = m.depts.slice().sort(function (a, b) { return b.n - a.n; });
+    var bars = !m.depts.length ? '<div class="muted">Chưa có dữ liệu.</div>' : '<div class="ld-unit">Đơn vị: công việc</div><div class="ld-hbars">' + sorted.map(function (x) {
+      return '<button class="ld-hbar" data-act="ldUnit" data-u="' + h(x.id) + '" title="Xem khối lượng theo cán bộ của ' + h(x.name) + '"><span class="nm">' + h(x.name) + '</span><span class="tr"><i class="' + LD_ST[x.st][1] + '" style="width:' + Math.max(x.n / top * 100, x.n ? 6 : 0) + '%"><em>' + x.n + '</em></i></span></button>';
+    }).join('') + '<div class="ld-axis"><span class="nm"></span><span class="tr">' + ticks.map(function (t) { return '<small style="left:' + (t / top * 100) + '%">' + t + '</small>'; }).join('') + '</span></div></div>' +
+      '<p class="muted small" style="margin:14px 0 0">Màu thanh theo khối lượng bình quân mỗi cán bộ của đơn vị so với bình quân chung (' + ldN(m.avg, 1) + ' việc/người). Bấm vào một đơn vị để xem từng cán bộ.</p>';
+    var cnt = { qua: 0, can: 0, it: 0 }; m.depts.forEach(function (x) { cnt[x.st]++; });
+    var state = [['qua', 'Nhiều việc (quá tải)', '!'], ['can', 'Cân bằng', '!'], ['it', 'Ít việc', '✓']].map(function (x) {
+      return '<div class="ld-state ' + LD_ST[x[0]][1] + (x[0] === 'can' ? ' ld-amber' : '') + '"><i>' + x[2] + '</i><span>' + x[1] + '</span><b>' + cnt[x[0]] + ' đơn vị</b></div>';
+    }).join('');
+    var over = sorted.filter(function (x) { return x.st === 'qua'; }), low = sorted.filter(function (x) { return x.st === 'it'; });
+    var tip = !m.totalN ? 'Kỳ này chưa có công việc nào được kê khai.' : over.length ? 'Hỗ trợ thêm cho <b>' + ldNames(over.map(function (x) { return h(x.name); })) + '</b> để giảm quá tải.' + (low.length ? ' Có thể điều phối từ <em>' + ldNames(low.map(function (x) { return h(x.name); })) + '</em> (đang ít việc).' : '')
+      : low.length ? 'Chưa có đơn vị quá tải. <em>' + ldNames(low.map(function (x) { return h(x.name); })) + '</em> đang ít việc, có thể nhận thêm nhiệm vụ.' : 'Khối lượng giữa các đơn vị đang cân bằng, chưa cần điều phối.';
+    var pri = sorted.slice().sort(function (a, b) { return (b.st === 'qua') - (a.st === 'qua') || b.wait - a.wait || b.per - a.per; }).filter(function (x) { return x.st === 'qua' || x.wait > 0; }).slice(0, 5);
+    var table = !pri.length ? '<div class="muted">Hôm nay chưa có đơn vị nào cần ưu tiên: không có đơn vị quá tải và không có phiếu chờ chấm.</div>' :
+      '<div class="tbl-wrap"><table class="ld-tbl"><thead><tr><th>TT</th><th>Phòng/Ban</th><th>Khối lượng</th><th>Bình quân/người</th><th>Phiếu chờ chấm</th><th>Tình trạng</th><th>Ưu tiên</th></tr></thead><tbody>' + pri.map(function (x, i) {
+        return '<tr class="click" data-act="ldUnit" data-u="' + h(x.id) + '"><td class="c">' + (i + 1) + '</td><td><b>' + h(x.name) + '</b></td><td class="c ' + (x.st === 'qua' ? 'hot' : '') + '">' + x.n + '</td><td class="c">' + ldN(x.per, 1) + '</td><td class="c">' + (x.wait || '–') + '</td><td class="c">' + ldChip(x.st) + '</td><td class="c">' + (x.st === 'qua' ? '<span class="ld-pill red">Ưu tiên cao</span>' : '<span class="ld-pill amber">Chấm phiếu</span>') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    return '<div class="ld">' + ldHead('', 'DASHBOARD LÃNH ĐẠO – ' + (d.admin ? 'TOÀN CƠ QUAN' : 'PHẠM VI PHỤ TRÁCH'), 'Tổng quan khối lượng công việc, tình trạng quá tải theo Phòng/Ban · ' + h(d.period.name)) +
+      '<div class="ld-kpis k4">' + ldCard('bank', 'Phòng/Ban', m.depts.length) + ldCard('people', 'Cán bộ', d.people.length) + ldCard('doc', 'Hồ sơ chờ duyệt', wait, wait ? 'red' : '') +
+      ldCard('target', 'KPI bình quân', ldPc(kpi), '', delta == null ? '' : '<span class="ld-delta ' + (delta >= 0 ? 'up' : 'down') + '" title="So với ' + h(d.prev.name) + '">' + (delta >= 0 ? '▲ +' : '▼ ') + ldN(delta, 1) + '%</span>') + '</div>' +
+      '<div class="ld-grid g1">' + ldPanel('chart', 'KHỐI LƯỢNG CÔNG VIỆC THEO PHÒNG/BAN', bars, 'a') +
+      ldPanel('layers', 'TÌNH TRẠNG KHỐI LƯỢNG', state, 'b') + ldPanel('bulb', 'GỢI Ý ĐIỀU PHỐI', '<div class="ld-tip"><div class="ld-swap"><i class="p1">' + LD_IC.people + '</i><span>➜</span><i class="p2">' + LD_IC.people + '</i></div><p>' + tip + '</p></div>', 'c') +
+      ldPanel('list', 'ĐƠN VỊ CẦN ƯU TIÊN HÔM NAY', table, 'e') + '</div>' + ldFoot() + '</div>';
+  }
+  function ldFoot() {
+    return '<div class="ld-legend"><b>TRẠNG THÁI KHỐI LƯỢNG:</b><span><i class="ld-red"></i>Quá tải (vượt ngưỡng)</span><span><i class="ld-green"></i>Cân bằng (trong ngưỡng)</span><span><i class="ld-blue"></i>Ít việc (dư địa)</span>' +
+      '<button class="btn sm no-print" data-act="ldReload">Làm mới số liệu</button></div>';
+  }
+
+  /* ---- Trang 2: Khối lượng theo cán bộ ---- */
+  function ldStaffHtml(d) {
+    var all = ldModel(d, true), deptIds = all.depts.map(function (x) { return x.id; });
+    if (LD.unit && deptIds.indexOf(LD.unit) < 0) LD.unit = '';
+    var rows = (LD.unit ? all.depts.filter(function (x) { return x.id === LD.unit; })[0].rows : all.rows).slice().sort(function (a, b) { return b.n - a.n || a.p.user.fullName.localeCompare(b.p.user.fullName, 'vi'); });
+    var tot = rows.reduce(function (s, r) { return s + r.n; }, 0), avg = rows.length ? tot / rows.length : 0, max = Math.max.apply(null, rows.map(function (r) { return r.n; }).concat([1]));
+    rows.forEach(function (r) { r.st = ldClass(r.n, avg, rows.length, d.load); });
+    var open = rows.reduce(function (s, r) { return s + r.open; }, 0), today = rows.reduce(function (s, r) { return s + r.today; }, 0), over = rows.filter(function (r) { return r.st === 'qua'; }), low = rows.filter(function (r) { return r.st === 'it'; }).reverse();
+    var w = ldWeek(d.today), timeName = LD.time === 'tuan' ? 'Tuần: ' + fdate(w[0]).slice(0, 5) + ' – ' + fdate(w[1]) : LD.time === 'nay' ? 'Hôm nay: ' + fdate(d.today) : h(d.period.name);
+    var table = !rows.length ? '<div class="muted">Chưa có cán bộ nào trong phạm vi này.</div>' : '<div class="ld-rank"><div class="hd"><span>TT</span><span>Cán bộ</span><span>Khối lượng (công việc)</span><span></span></div>' + rows.map(function (r, i) {
+      return '<button class="rw" data-act="ldWho" data-u="' + h(r.p.user.id) + '" title="Mở hồ sơ cán bộ"><span class="tt">' + (i + 1) + '</span><span class="nm"><b>' + h(r.p.user.fullName) + '</b><small>' + h(unitName(r.p.user.unitId)) + (r.g ? ' · điểm chuẩn ' + ldN(r.g) : '') + (r.hrs ? ' · ' + ldN(r.hrs, 1) + ' giờ' : '') + '</small></span>' +
+        '<span class="br"><i class="tr"><i class="' + LD_ST[r.st][1] + '" style="width:' + (r.n / max * 100) + '%"></i></i><b>' + r.n + '</b></span><span class="st">' + ldChip(r.st) + '</span></button>';
+    }).join('') + '</div>';
+    // Đề xuất: chuyển một việc chưa chấm của người nhiều việc nhất sang người ít việc nhất cùng phạm vi
+    var from = over[0], to = low[0] || rows.filter(function (r) { return r.st !== 'qua'; }).slice(-1)[0], sug = ''; // không có người ít việc thì chọn người đang ít việc nhất trong phạm vi
+    if (from && to) {
+      var cand = from.tasks.filter(function (t) { return !t.lk; }).sort(function (a, b) { return (b.dl || '9').localeCompare(a.dl || '9'); })[0];
+      sug = cand ? '<div class="ld-sug"><p>' + ldIc('doc') + '<span>Giao mới: <b>' + h(cand.name || cand.type) + '</b></span></p><div class="ft"><span class="ld-chip ld-red">Từ: ' + h(from.p.user.fullName) + '</span><i>➜</i><span class="ld-chip ld-green">Đến: ' + h(to.p.user.fullName) + '</span></div>' +
+        (S.canAssign ? '<button class="ld-go no-print" data-act="ldAssign" data-u="' + h(to.p.user.id) + '" data-n="' + h(cand.name) + '">GIAO VIỆC NGAY</button>' : '') +
+        '<small class="muted">Gợi ý để tham khảo: việc chưa chấm của người nhiều việc nhất, người nhận đang ít việc nhất. Bấm nút để mở trang Giao việc đã chọn sẵn người nhận.</small></div>' : '';
+    }
+    if (!sug) sug = '<div class="muted">' + (rows.length <= 2 ? 'Phạm vi có từ 2 cán bộ trở xuống nên chưa so sánh quá tải, ít việc.' : !over.length ? 'Chưa có cán bộ quá tải nên chưa cần điều chuyển công việc.' : 'Chưa tìm được người đang ít việc để nhận bớt.') + '</div>';
+    var need = !over.length ? '<div class="muted">Không có cán bộ nào vượt ngưỡng quá tải.</div>' : over.slice(0, 6).map(function (r, i) {
+      return '<button class="ld-need" data-act="ldWho" data-u="' + h(r.p.user.id) + '"><i>' + (i + 1) + '</i><b>' + h(r.p.user.fullName) + '</b>' + ldChip('qua', ' (' + r.n + ' CV)') + '</button>';
+    }).join('');
+    var filter = '<label><span>' + ldIc('people') + 'Chọn phòng/ban</span><select data-ld="unit"><option value="">Tất cả phòng/ban</option>' + all.depts.map(function (x) { return '<option value="' + h(x.id) + '"' + (x.id === LD.unit ? ' selected' : '') + '>' + h(x.name) + '</option>'; }).join('') + '</select></label>' +
+      '<label><span>' + ldIc('cal') + 'Chọn thời gian</span><select data-ld="time">' + [['ky', 'Cả kỳ đang chọn'], ['tuan', 'Tuần hiện tại'], ['nay', 'Hôm nay']].map(function (x) { return '<option value="' + x[0] + '"' + (x[0] === LD.time ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select></label>' +
+      '<button class="ld-view no-print" data-act="ldReload">' + ldIc('search') + 'XEM DỮ LIỆU</button><p class="muted small">Tuần, hôm nay: tính theo ngày thực hiện, hạn hoàn thành hoặc ngày hoàn thành của công việc.</p>';
+    return '<div class="ld">' + ldHead('2', 'DASHBOARD LÃNH ĐẠO – KHỐI LƯỢNG THEO CÁN BỘ', 'Tổng quan khối lượng công việc theo cán bộ • Nhận diện quá tải – ít việc • Đề xuất phân bổ hợp lý') +
+      '<div class="ld-kpis k3">' + ldCard('doc', 'CÔNG VIỆC CHỜ CHẤM', open, '', '<span class="ld-tag">Công việc</span>') + ldCard('cal', 'CÔNG VIỆC HÔM NAY', today, '', '<span class="ld-tag">Công việc</span>') + ldCard('bell', 'CẢNH BÁO QUÁ TẢI', over.length, 'red', '<span class="ld-tag">Cán bộ</span>') + '</div>' +
+      '<div class="ld-grid g2">' + ldPanel('layers', 'BỘ LỌC DỮ LIỆU', filter, 'f flt') + ldPanel('chart', 'KHỐI LƯỢNG CÔNG VIỆC THEO CÁN BỘ', table, 'm', '<span class="ld-when">' + timeName + '</span>') +
+      '<div class="r">' + ldPanel('target', 'ĐỀ XUẤT GIAO VIỆC', sug) + ldPanel('people', 'CÁN BỘ CẦN HỖ TRỢ', need) + '</div></div>' + ldFoot() + '</div>';
+  }
+
+  /* ---- Trang 3: Hồ sơ cán bộ ---- */
+  function ldLine(tr) {
+    var pts = tr.map(function (x) { var k = ldKpi(x.p2); return k == null ? null : k * 100; }), vals = pts.filter(function (v) { return v != null; });
+    if (!vals.length) return '<div class="muted">Chưa có kỳ nào có công việc được chấm.</div>';
+    var lo = Math.floor((Math.min.apply(null, vals) - 5) / 5) * 5, hi = Math.ceil((Math.max.apply(null, vals) + 3) / 5) * 5, W = 380, H = 200, L = 40, R = 22, T = 28, B = 32;
+    if (hi - lo < 10) hi = lo + 10;
+    var x = function (i) { return L + (tr.length === 1 ? (W - L - R) / 2 : i * (W - L - R) / (tr.length - 1)); }, y = function (v) { return T + (hi - v) / (hi - lo) * (H - T - B); }, grid = '', path = '', dots = '', first = null, last = null;
+    for (var g = lo; g <= hi; g += (hi - lo) / 4) grid += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(g) + '" y2="' + y(g) + '"/><text x="' + (L - 8) + '" y="' + (y(g) + 4) + '" text-anchor="end">' + ldN(g, 0) + '</text>';
+    pts.forEach(function (v, i) {
+      dots += '<text class="xl" x="' + x(i) + '" y="' + (H - 10) + '" text-anchor="middle">' + h(tr[i].name.replace(/^Tháng\s*/i, 'T').replace(/\/\d{4}$/, '')) + '</text>';
+      if (v == null) return;
+      path += (path ? ' L' : 'M') + x(i) + ' ' + y(v); if (first == null) first = i; last = i;
+      dots += '<circle cx="' + x(i) + '" cy="' + y(v) + '" r="5"/><text class="vl' + (i === pts.length - 1 ? ' cur' : '') + '" x="' + x(i) + '" y="' + (y(v) - 11) + '" text-anchor="middle">' + ldN(v, 1) + '</text>';
+    });
+    return '<svg class="ld-line-chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="KPI theo các kỳ"><g class="gr">' + grid + '</g>' + (first !== last ? '<path class="ar" d="' + path + ' L' + x(last) + ' ' + y(lo) + ' L' + x(first) + ' ' + y(lo) + ' Z"/>' : '') + '<path class="ln" d="' + path + '"/>' + dots + '</svg>';
+  }
+  var LD_COL = ['#2b7de9', '#22a652', '#f5a524', '#e5383b', '#7c3aed', '#06b6d4', '#94a3b8'];
+  function ldDonut(tasks) {
+    var by = {}, keys = [];
+    tasks.forEach(function (t) { var k = t.type || 'Khác'; if (!(k in by)) { by[k] = 0; keys.push(k); } by[k]++; });
+    if (!tasks.length) return '<div class="muted">Kỳ này chưa có công việc nào.</div>';
+    keys.sort(function (a, b) { return by[b] - by[a]; });
+    if (keys.length > 6) { var rest = keys.slice(5).reduce(function (s, k) { return s + by[k]; }, 0); keys = keys.slice(0, 5); by['Loại khác'] = rest; keys.push('Loại khác'); }
+    var C = 2 * Math.PI * 42, off = 0, arcs = '';
+    keys.forEach(function (k, i) { var len = by[k] / tasks.length * C; arcs += '<circle cx="60" cy="60" r="42" fill="none" stroke="' + LD_COL[i % LD_COL.length] + '" stroke-width="22" stroke-dasharray="' + len + ' ' + (C - len) + '" stroke-dashoffset="' + (-off) + '"/>'; off += len; });
+    return '<div class="ld-donut"><svg viewBox="0 0 120 120" role="img" aria-label="Loại công việc"><g transform="rotate(-90 60 60)">' + arcs + '</g><text class="n" x="60" y="60" text-anchor="middle">' + tasks.length + '</text><text class="t" x="60" y="74" text-anchor="middle">công việc</text></svg>' +
+      '<ul>' + keys.map(function (k, i) { return '<li><i style="background:' + LD_COL[i % LD_COL.length] + '"></i>' + h(k) + ' (' + Math.round(by[k] / tasks.length * 100) + '%)</li>'; }).join('') + '</ul></div>';
+  }
+  function ldProfileHtml(d, pf) {
+    var staff = d.people.filter(function (p) { return p.user.selfEval; }).sort(function (a, b) { return a.user.fullName.localeCompare(b.user.fullName, 'vi'); });
+    var pick = '<label class="ld-pick no-print"><span>Cán bộ:</span><select data-ld="who"><option value="">– chọn cán bộ –</option>' + staff.map(function (p) { return '<option value="' + h(p.user.id) + '"' + (pf && p.user.id === pf.owner.id ? ' selected' : '') + '>' + h(p.user.fullName) + ' · ' + h(unitName(p.user.unitId)) + '</option>'; }).join('') + '</select></label>';
+    var head = ldHead('3', 'HỒ SƠ CÁN BỘ – THEO DÕI VÀ ĐÁNH GIÁ', 'Theo dõi kết quả công việc, chất lượng thực hiện và đánh giá toàn diện cán bộ');
+    var crumb = function (name) { return '<div class="ld-crumb"><span class="hm">⌂</span><a href="#/ldtong">Dashboard lãnh đạo</a><i>›</i><a href="#/ldcanbo">Hồ sơ cán bộ</a>' + (name ? '<i>›</i><b>' + h(name) + '</b>' : '') + '<span class="sp"></span>' + pick + '<span class="ky">Kỳ theo dõi: <b>' + h(d.period.name) + '</b></span></div>'; };
+    if (!pf) return '<div class="ld">' + head + crumb('') + '<div class="card">Chọn một cán bộ ở ô <b>Cán bộ</b> phía trên, hoặc bấm tên cán bộ ở trang <a href="#/ldcanbo">Khối lượng theo cán bộ</a>.</div></div>';
+    var o = pf.owner, cur = pf.trend[pf.trend.length - 1] || { p2: {} }, p2 = cur.p2, G = p2.G || 0, has2 = G > 0, a = has2 ? p2.GH / G : null, b = has2 ? p2.GHQ / G : null, c = has2 ? p2.GHT / G : null, kpi = ldKpi(p2), pre = pf.trend.length > 1 ? ldKpi(pf.trend[pf.trend.length - 2].p2) : null;
+    var lab = function (v) { return v == null ? 'Chưa chấm' : v >= 1 ? 'Tốt' : v >= 0.9 ? 'Đạt' : 'Cần cố gắng'; }, f2 = function (v) { return v == null ? '–' : Number(v).toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    var idx = [['G', 'g', has2 ? f2(G) : '–', 'Điểm chuẩn'], ['P', 'p', has2 ? f2(p2.P) : '–', 'Thực đạt'], ['a', 'a', f2(a), lab(a)], ['b', 'b', f2(b), lab(b)], ['c', 'c', f2(c), lab(c)], ['KPI', 'k', ldPc(kpi), kpi == null ? 'Chưa chấm' : kpi >= 1 ? 'Hoàn thành tốt' : kpi >= 0.9 ? 'Hoàn thành' : 'Cần cố gắng']]
+      .map(function (x) { return '<div class="ld-idx i-' + x[1] + '"><i>' + x[0] + '</i><b>' + x[2] + '</b><span>' + x[3] + '</span></div>'; }).join('');
+    var T = pf.tasks, late = T.filter(function (t) { return t.dl && ((t.dn && t.dn > t.dl) || (!t.dn && !t.lk && t.dl < pf.today)); }).length, noEv = T.filter(function (t) { return !t.ev; }).length, fbs = Math.max(pf.fbs, T.filter(function (t) { return t.fb; }).length);
+    var withDl = T.filter(function (t) { return t.dl; }).length, scored = T.filter(function (t) { return t.lk; }), qAvg = scored.filter(function (t) { return t.Q != null; }), qv = qAvg.length ? qAvg.reduce(function (s, t) { return s + Number(t.Q); }, 0) / qAvg.length : null;
+    var errs = [['Chậm tiến độ (quá hạn hoàn thành)', late, 'việc'], ['Thiếu minh chứng', noEv, 'việc'], ['Bị yêu cầu sửa, đánh giá lại', pf.redo, 'lần'], ['Phản hồi không tán thành kết quả', fbs, 'lần']].map(function (x) {
+      return '<div class="ld-err' + (x[1] ? '' : ' ok') + '"><span>' + x[0] + '</span><b>' + (x[1] ? x[1] + ' ' + x[2] : 'Không') + '</b></div>';
+    }).join('');
+    var stOf = function (t) { return t.lk ? ['Đã chấm', 'ld-green', '✓'] : pf.status === 'yeu_cau_sua' ? ['Cần bổ sung', 'ld-red', '!'] : pf.status === 'cho_duyet' || pf.status === 'da_chot' ? ['Chờ duyệt', 'ld-amber', '◷'] : ['Đang soạn', 'ld-gray', '…']; };
+    var recent = T.slice().sort(function (x, y) { return (y.date || y.wd || y.dn || y.dl || '').localeCompare(x.date || x.wd || x.dn || x.dl || ''); }).slice(0, 8);
+    var tbl = !T.length ? '<div class="muted">Kỳ này cán bộ chưa kê khai công việc nào.</div>' : '<div class="tbl-wrap"><table class="ld-tbl"><thead><tr><th>TT</th><th>Nội dung công việc</th><th>Ngày</th><th>Trạng thái</th></tr></thead><tbody>' + recent.map(function (t, i) {
+      var s = stOf(t);
+      return '<tr><td class="c">' + (i + 1) + '</td><td>' + h(t.name || t.type) + (t.by ? '<div class="muted small">Giao bởi ' + h(t.by) + '</div>' : '') + '</td><td class="c">' + (fdate(t.wd || t.dn || t.dl || t.date) || '–') + '</td><td class="c"><span class="ld-chip ' + s[1] + '"><em>' + s[2] + '</em> ' + s[0] + '</span></td></tr>';
+    }).join('') + '</tbody></table></div>' + (T.length > recent.length ? '<p class="muted small" style="margin:8px 0 0">Hiện ' + recent.length + '/' + T.length + ' việc gần nhất. </p>' : '') + '<p style="margin:10px 0 0" class="no-print"><a href="#/pp2phieu/' + encodeURIComponent(o.id) + '">Mở phiếu đánh giá của ' + h(o.fullName) + ' ›</a></p>';
+    var good = [], need = [];
+    if (withDl && !late) good.push('Hoàn thành đúng hạn ' + withDl + '/' + withDl + ' việc có hạn');
+    if (qv != null && qv >= 1) good.push('Chất lượng sản phẩm đạt yêu cầu trở lên');
+    if (T.length && !noEv) good.push('Minh chứng đầy đủ cho mọi công việc');
+    if (kpi != null && kpi >= 1) good.push('KPI đạt từ 100% trở lên');
+    if (pre != null && kpi != null && kpi > pre) good.push('Kết quả tăng so với kỳ trước');
+    if (late) need.push('Cập nhật tiến độ, hoàn thành đúng hạn (' + late + ' việc chậm)');
+    if (noEv) need.push('Bổ sung minh chứng cho ' + noEv + ' việc');
+    if (pf.redo) need.push('Rà soát kỹ phiếu trước khi nộp (' + pf.redo + ' lần phải sửa)');
+    if (qv != null && qv < 1) need.push('Nâng chất lượng sản phẩm (hệ số chất lượng bình quân ' + f2(qv) + ')');
+    if (pf.status === 'chua_lap' || pf.status === 'nhap') need.push('Kê khai và nộp phiếu của kỳ');
+    var li = function (a2, empty) { return a2.length ? '<ul>' + a2.map(function (x) { return '<li>' + h(x) + '</li>'; }).join('') + '</ul>' : '<ul><li class="muted">' + empty + '</li></ul>'; };
+    var quick = !T.length ? 'Kỳ ' + h(pf.period.name) + ' cán bộ chưa kê khai công việc nên chưa có số liệu để nhận định.' :
+      '<b>Kết quả ' + h(pf.period.name) + ': ' + (kpi == null ? 'chưa có việc nào được chấm' : 'KPI ' + ldPc(kpi) + (pre != null ? ' (' + (kpi >= pre ? 'tăng ' : 'giảm ') + ldN(Math.abs(kpi - pre) * 100, 1) + ' điểm % so với kỳ trước)' : '')) + '.</b> ' +
+      'Đã chấm ' + scored.length + '/' + T.length + ' việc' + (has2 ? ', điểm chuẩn ' + f2(G) + ', thực đạt ' + f2(p2.P) : '') + '. ' +
+      (need.length ? 'Cần lưu ý: ' + h(need[0].charAt(0).toLowerCase() + need[0].slice(1)) + (need[1] ? '; ' + h(need[1].charAt(0).toLowerCase() + need[1].slice(1)) : '') + '.' : 'Chưa ghi nhận lỗi nào về tiến độ, minh chứng trong kỳ.') + (pf.result ? ' Xếp loại kỳ: <b>' + h(pf.result) + '</b>.' : '');
+    var ini = o.fullName.trim().split(/\s+/).slice(-2).map(function (w2) { return w2.charAt(0); }).join('').toUpperCase();
+    return '<div class="ld">' + head + crumb(o.fullName) +
+      '<div class="ld-grid g3a">' + ldPanel('people', 'THÔNG TIN CÁN BỘ', '<div class="ld-who"><div class="av">' + h(ini) + '</div><div><h3>' + h(o.fullName) + '</h3><p>' + ldIc('bank') + h(unitName(o.unitId)) + '</p><p>' + ldIc('people') + h(o.title || LEVEL[o.level]) + '</p><p class="muted small">Người phụ trách đánh giá: ' + h(pf.managerName || 'chưa khai') + ' · ' + badge(pf.status) + '</p></div></div>') +
+      ldPanel('target', 'CHỈ SỐ ĐÁNH GIÁ (' + h(pf.period.name.toUpperCase()) + ')', '<div class="ld-idxs">' + idx + '</div>', '', '<span class="ld-when">KPI: <b>' + ldPc(kpi) + '</b></span>') + '</div>' +
+      '<div class="ld-grid g3">' + ldPanel('chart', 'KẾT QUẢ THEO THỜI GIAN', ldLine(pf.trend) + '<p class="muted small" style="margin:4px 0 0">KPI (%) của các kỳ gần nhất, tính trên các việc đã được chấm.</p>') + ldPanel('pie', 'LOẠI CÔNG VIỆC', ldDonut(T)) + ldPanel('warn', 'LỖI THƯỜNG GẶP', errs) +
+      ldPanel('doc', 'HỒ SƠ / CÔNG VIỆC GẦN ĐÂY', tbl) + ldPanel('cup', 'ĐIỂM MẠNH & CẦN HỖ TRỢ', '<div class="ld-sw good"><b>★ Điểm mạnh</b>' + li(good, 'Chưa đủ số liệu để ghi nhận') + '</div><div class="ld-sw need"><b>✚ Cần hỗ trợ</b>' + li(need, 'Chưa ghi nhận điểm nào cần hỗ trợ') + '</div>') +
+      ldPanel('target', 'NHẬN ĐỊNH NHANH', '<div class="ld-quick">' + ldIc('chart') + '<p>' + quick + '</p></div>') + '</div></div>';
+  }
+  async function ldProfile(id) {
+    if (!id) return null;
+    var key = S.periodId + '|' + id;
+    if (LD.prof && LD.profKey === key) return LD.prof;
+    LD.prof = await api('leaderProfile', { periodId: S.periodId, userId: id }); LD.profKey = key;
+    return LD.prof;
+  }
+  ACT.ldUnit = function (el) { LD.unit = el.dataset.u; location.hash = '#/ldcanbo'; };
+  ACT.ldWho = function (el) { location.hash = '#/ldhoso/' + encodeURIComponent(el.dataset.u); };
+  ACT.ldReload = function () { LD.d = null; LD.prof = null; try { sessionStorage.removeItem('kpi_c:ld:' + S.periodId); } catch (e) { /* bỏ qua */ } render(); };
+  ACT.ldAssign = function (el) {
+    GV.pick = {}; GV.pick[el.dataset.u] = true;
+    var name = el.dataset.n || '', n = 0;
+    location.hash = '#/giaoviec/moi';
+    var iv = setInterval(function () { var box = document.getElementById('gvName'); if (box) { if (!box.value) box.value = name; clearInterval(iv); } else if (++n > 40) clearInterval(iv); }, 150);
+  };
+  document.addEventListener('change', function (ev) {
+    var el = ev.target, k = el && el.dataset ? el.dataset.ld : '';
+    if (!k) return;
+    if (k === 'who') { location.hash = '#/ldhoso/' + encodeURIComponent(el.value); return; }
+    LD[k] = el.value; render();
+  });
+
   /* ======================= PP2 DÙNG CHUNG PHIẾU VỚI PP1 =======================
    * Một công việc chỉ lưu một dòng (PhieuDanhGia, DanhGia) dù mở bằng PP1 hay PP2. Trang PP2 dùng lại toàn bộ phiếu PP1
    * (kê khai, danh mục, minh chứng, phản hồi, giao việc, xác nhận, gia hạn, chấm, nhận xét, lịch sử), chỉ đổi các cột của bảng:

@@ -2369,6 +2369,13 @@
   }
   ACT.p2OpenSel = function (el) { p2DoOpen(P2.rows.filter(function (r, i) { return P2.sel[i]; }), el); };
   ACT.p2Open = function (el) { p2DoOpen([P2.rows[+el.dataset.r]], el); };
+  ACT.navGrp = function (el) {
+    var box = el.nextElementSibling, open = box.hasAttribute('hidden'), st = navOpen();
+    if (open) box.removeAttribute('hidden'); else box.setAttribute('hidden', '');
+    el.classList.toggle('open', open); el.setAttribute('aria-expanded', String(open));
+    st[el.dataset.g] = open ? 1 : 0;
+    try { localStorage.setItem('kpi_nav', JSON.stringify(st)); } catch (e) { /* không lưu được thì chỉ đổi trong phiên này */ }
+  };
   ACT.taskOk = function (el) { flowCall(el, 'taskAccept', { ok: 1 }, 'Đã xác nhận nhiệm vụ.'); };
   ACT.taskFb = function (el) {
     var note = prompt('Lý do nhiệm vụ này chưa hợp lý (mỗi nhiệm vụ chỉ phản hồi được một lần):');
